@@ -28,9 +28,9 @@ def mutate_strategy_code():
     Tugas Anda: Buat variasi/mutasi logika baru untuk fungsi `generate_signals(df: pd.DataFrame) -> pd.Series`.
     
     ATURAN STRICT:
-    1. `df` sudah memiliki kolom float: 'open', 'high', 'low', 'close', 'volume'.
-    2. Gunakan pustaka standar pandas / numpy saja (misal: df['close'].rolling(20).mean()).
-    3. Output HARUS MURNI kode Python tanpa penjelasan, tanpa tag ```python.
+    1. WAJIB sertakan `import pandas as pd` dan `import numpy as np` di baris paling atas!
+    2. `df` sudah memiliki kolom float: 'open', 'high', 'low', 'close', 'volume'.
+    3. Output HARUS MURNI kode Python valid tanpa penjelasan, tanpa tag ```python.
     4. Kembalikan pd.Series dengan nilai 1 (BUY), -1 (SELL), atau 0 (HOLD).
     """
 
