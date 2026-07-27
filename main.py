@@ -1,51 +1,61 @@
 import time
+import ccxt
 import pandas as pd
-import numpy as np
 from strategy_engine import BayesianStrategyEngine, load_active_config
 
+# Inisialisasi Binance Public Client (Tidak Membutuhkan API Key)
+exchange = ccxt.binance({
+    'enableRateLimit': True, # Mencegah ip-ban akibat panggil berlebihan
+})
 
-def fetch_dummy_market_data(days: int = 60) -> pd.DataFrame:
-    """
-    Fungsi generator data pasar.
-    Gantikan fungsi ini dengan panggil API Exchange asli Anda (misal: Binance/CCXT/Bybit)
-    """
-    date_range = pd.date_range(end=pd.Timestamp.now(), periods=days * 24, freq="1h")
-    np.random.seed(42)
-    price_changes = np.random.normal(loc=0.0002, scale=0.01, size=len(date_range))
-    price_path = 100 * np.exp(np.cumsum(price_changes))
+SYMBOL = 'BTC/USDT'  # Pasangan aset yang ingin di-research
+TIMEFRAME = '1h'     # Timeframe candlestick (1h, 4h, 1d)
+CANDLE_LIMIT = 1000 # Jumlah candle historis untuk backtest & optimasi (~41 hari data)
 
-    df = pd.DataFrame(
-        {
-            "open": price_path,
-            "high": price_path * 1.002,
-            "low": price_path * 0.998,
-            "close": price_path,
-            "volume": np.random.randint(100, 1000, size=len(date_range)),
-        },
-        index=date_range,
-    )
-    return df
+
+def fetch_live_market_data(symbol: str = SYMBOL, timeframe: str = TIMEFRAME, limit: int = CANDLE_LIMIT) -> pd.DataFrame:
+    """
+    Menarik data OHLCV historis asli dari Binance Public REST API
+    """
+    print(f"📥 Fetching live OHLCV market data from Binance Public API ({symbol} - {timeframe})...")
+    
+    try:
+        # Panggil API Public Binance via CCXT
+        ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
+        
+        # Konversi array menjadi DataFrame Pandas
+        df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+        
+        # Format Timestamp ms ke Datetime Index
+        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+        df.set_index('timestamp', inplace=True)
+        
+        print(f"✅ Successfully fetched {len(df)} candles! (Latest Price: ${df['close'].iloc[-1]:,.2f})")
+        return df
+
+    except Exception as e:
+        print(f"❌ Error fetching market data: {e}")
+        raise e
 
 
 def main():
-    print("🚀 Starting Bayesian Autoresearch Trading Bot...")
+    print("🚀 Starting Bayesian Autoresearch Engine (Live Binance Market Feed)...")
 
-    # Load config awal (jika ada)
+    # Load parameter winner aktif dari local config jika ada
     active_params = load_active_config()
     is_healthy = active_params is not None
 
     while True:
         try:
-            # 1. Fetch Market Data Terbaru
-            print("\n📥 Fetching latest market data...")
-            df = fetch_dummy_market_data(days=60)
+            # 1. Fetch Live Market Data dari Binance Public
+            df = fetch_live_market_data()
 
-            # 2. Kondisi Self-Healing Trigger:
-            #    - Jika bot baru berjalan pertama kali
-            #    - Atau jika strategi aktif ditandai 'Unhealthy' / Performa Drop
+            # 2. Self-Healing Trigger: Run Bayesian Optimization jika belum ada winner valid
             if not is_healthy or active_params is None:
-                print("🚨 [Triggered] Self-Healing Process Initialized...")
+                print("\n🚨 [Triggered] Self-Healing Process Initialized on Live Market Data...")
                 engine = BayesianStrategyEngine(df)
+                
+                # Jalankan 100 iterasi pencarian strategi pemenang
                 new_params, success = engine.heal_and_find_winner(n_trials=100)
 
                 if success:
@@ -53,30 +63,29 @@ def main():
                     is_healthy = True
                     print("✅ Active Strategy Hot-Reloaded with Winner Parameters!")
                 else:
-                    print("⚠️ Self-Healing Failed to find a valid strategy. Retrying next cycle...")
+                    print("⚠️ Self-Healing couldn't find a safe winner on current market regime. Will retry next cycle.")
                     is_healthy = False
 
-            # 3. Jalankan Logic Eksekusi Trade dengan Active Winner Params
+            # 3. Log Status Parameter Aktif
             if is_healthy:
-                print(f"🤖 Bot Executing Trade Logic using Active Winner Params:")
+                print("\n🤖 [Research Engine] Active Strategy Parameters Ready for Trade Executor:")
                 print(f"   -> RSI Period: {active_params['rsi_period']}")
                 print(f"   -> Entry Threshold: {active_params['rsi_lower']}")
                 print(f"   -> Exit Threshold: {active_params['rsi_upper']}")
-                print(f"   -> Stop Loss: {active_params['stop_loss_pct']*100}%")
-                print(f"   -> Take Profit: {active_params['take_profit_pct']*100}%")
-                
-                # TODO: Panggil fungsi API order Binance / Smart Contract dApp Anda di sini
+                print(f"   -> Stop Loss: {active_params['stop_loss_pct']*100:.2f}%")
+                print(f"   -> Take Profit: {active_params['take_profit_pct']*100:.2f}%")
 
-            # 4. Sleep Interval (misal: Cek / Re-evaluate setiap 1 jam)
-            print("💤 Waiting for next interval...")
+            # 4. Sleep Interval: Lakukan re-optimasi/cek data setiap 1 jam
+            print("\n💤 Research Engine idling... Waiting 1 hour for next analysis cycle.")
             time.sleep(3600)
 
         except KeyboardInterrupt:
-            print("\n🛑 Bot stopped gracefully by user.")
+            print("\n🛑 Research Engine stopped gracefully.")
             break
         except Exception as e:
-            print(f"❌ Error encountered: {e}")
-            time.sleep(10)
+            print(f"❌ Error encountered in main loop: {e}")
+            print("⏳ Retrying in 30 seconds...")
+            time.sleep(30)
 
 
 if __name__ == "__main__":
