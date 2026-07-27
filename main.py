@@ -22,7 +22,7 @@ TOP_10_PAIRS = [
     'NEAR/USDT'
 ]
 
-TIMEFRAME = '1h'
+TIMEFRAME = '15m'
 CANDLE_LIMIT = 1000  # ~41 hari data historis
 
 # Definisikan 2 jenis waktu tunggu di bagian atas file
