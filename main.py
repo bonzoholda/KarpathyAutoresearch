@@ -1,124 +1,83 @@
-# main.py
-import os
 import time
-import requests
-from openai import OpenAI
-import evaluator
+import pandas as pd
+import numpy as np
+from strategy_engine import BayesianStrategyEngine, load_active_config
 
-# Menggunakan Groq / OpenRouter API untuk mutasi cepat
-client = OpenAI(
-    base_url="https://api.groq.com/openai/v1",
-    api_key=os.getenv("GROQ_API_KEY", "your_groq_key")
-)
 
-OPENCLAW_WEBHOOK_URL = os.getenv("OPENCLAW_WEBHOOK_URL", "")
-OPENCLAW_TOKEN = os.getenv("OPENCLAW_GATEWAY_TOKEN", "")
-
-BEST_SHARPE_SCORE = 1.2  # Baseline awal
-
-def mutate_strategy_code():
-    with open("strategy_candidate.py", "r") as f:
-        current_code = f.read()
-
-    prompt = f"""
-    Berikut adalah kode strategi Python saat ini:
-    ```python
-    {current_code}
-    ```
-    Tugas Anda: Buat variasi/mutasi logika baru untuk fungsi `generate_signals(df: pd.DataFrame) -> pd.Series`.
-    
-    ATURAN STRICT:
-    1. WAJIB sertakan `import pandas as pd` dan `import numpy as np` di baris paling atas!
-    2. `df` sudah memiliki kolom float: 'open', 'high', 'low', 'close', 'volume'.
-    3. Output HARUS MURNI kode Python valid tanpa penjelasan, tanpa tag ```python.
-    4. Kembalikan pd.Series dengan nilai 1 (BUY), -1 (SELL), atau 0 (HOLD).
+def fetch_dummy_market_data(days: int = 60) -> pd.DataFrame:
     """
+    Fungsi generator data pasar.
+    Gantikan fungsi ini dengan panggil API Exchange asli Anda (misal: Binance/CCXT/Bybit)
+    """
+    date_range = pd.date_range(end=pd.Timestamp.now(), periods=days * 24, freq="1h")
+    np.random.seed(42)
+    price_changes = np.random.normal(loc=0.0002, scale=0.01, size=len(date_range))
+    price_path = 100 * np.exp(np.cumsum(price_changes))
 
-    res = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.7
+    df = pd.DataFrame(
+        {
+            "open": price_path,
+            "high": price_path * 1.002,
+            "low": price_path * 0.998,
+            "close": price_path,
+            "volume": np.random.randint(100, 1000, size=len(date_range)),
+        },
+        index=date_range,
     )
-    
-    new_code = res.choices[0].message.content.replace("```python", "").replace("```", "").strip()
-    return new_code
+    return df
 
 
-# main.py (Perbaruan Fungsi notify_openclaw)
+def main():
+    print("🚀 Starting Bayesian Autoresearch Trading Bot...")
 
-def notify_openclaw(new_code, score):
-    """Mengirim strategi baru ke OpenClaw API Gateway dengan Header Universal"""
-    openclaw_domain = os.getenv("OPENCLAW_DOMAIN", "https://openclawshit.up.railway.app").rstrip("/")
-    openclaw_token = os.getenv("OPENCLAW_GATEWAY_TOKEN", "MySuperSecretToken123!")
-    
-    # Endpoint resmi OpenClaw Gateway untuk prompt injection/config update
-    endpoints = [
-        f"{openclaw_domain}/api/agent/prompt",
-        f"{openclaw_domain}/api/v1/agent/prompt",
-        f"{openclaw_domain}/api/config",
-        f"{openclaw_domain}/api/gateway"
-    ]
-    
-    # Header lengkap agar lolos dari validasi security OpenClaw Gateway
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {openclaw_token}",
-        "x-gateway-token": openclaw_token,
-        "x-token": openclaw_token
-    }
-    
-    payload = {
-        "token": openclaw_token,
-        "agent_id": "Analyst-Sentinel",
-        "prompt": f"[SYSTEM INSTRUCTION UPDATE]\nStrategi trading acuan terbaru (Sharpe Ratio: {score}) telah diperbarui oleh Autoresearch:\n\n{new_code}\n\nGunakan aturan indikator di atas untuk mengevaluasi sinyal BUY/SELL berikutnya.",
-        "system_prompt_patch": f"Aturan Indikator Kunci (Sharpe: {score}):\n{new_code}"
-    }
-    
-    success = False
-    for ep in endpoints:
-        try:
-            r = requests.post(ep, json=payload, headers=headers, timeout=5)
-            if r.status_code in [200, 201, 202, 204]:
-                print(f"⚡ Pushed to OpenClaw ({ep}): Status {r.status_code} - HOT-RELOAD SUCCESS!")
-                success = True
-                break
-            else:
-                print(f"⚠️ Endpoint {ep} responded with status: {r.status_code}")
-        except Exception as e:
-            continue
-            
-    if not success:
-        print("ℹ️ REST API gateway protected. OpenClaw UI Dashboard will fetch the active champion strategy upon manual/scheduled prompt.")
+    # Load config awal (jika ada)
+    active_params = load_active_config()
+    is_healthy = active_params is not None
 
-def research_loop():
-    global BEST_SHARPE_SCORE
-    print("🚀 Starting Autoresearch Self-Healing Loop...")
-    
     while True:
-        print("\n[STEP] Mutating strategy code via LLM...")
         try:
-            candidate = mutate_strategy_code()
-            
-            # Simpan sementara kode baru
-            with open("strategy_candidate.py", "w") as f:
-                f.write(candidate)
+            # 1. Fetch Market Data Terbaru
+            print("\n📥 Fetching latest market data...")
+            df = fetch_dummy_market_data(days=60)
+
+            # 2. Kondisi Self-Healing Trigger:
+            #    - Jika bot baru berjalan pertama kali
+            #    - Atau jika strategi aktif ditandai 'Unhealthy' / Performa Drop
+            if not is_healthy or active_params is None:
+                print("🚨 [Triggered] Self-Healing Process Initialized...")
+                engine = BayesianStrategyEngine(df)
+                new_params, success = engine.heal_and_find_winner(n_trials=100)
+
+                if success:
+                    active_params = new_params
+                    is_healthy = True
+                    print("✅ Active Strategy Hot-Reloaded with Winner Parameters!")
+                else:
+                    print("⚠️ Self-Healing Failed to find a valid strategy. Retrying next cycle...")
+                    is_healthy = False
+
+            # 3. Jalankan Logic Eksekusi Trade dengan Active Winner Params
+            if is_healthy:
+                print(f"🤖 Bot Executing Trade Logic using Active Winner Params:")
+                print(f"   -> RSI Period: {active_params['rsi_period']}")
+                print(f"   -> Entry Threshold: {active_params['rsi_lower']}")
+                print(f"   -> Exit Threshold: {active_params['rsi_upper']}")
+                print(f"   -> Stop Loss: {active_params['stop_loss_pct']*100}%")
+                print(f"   -> Take Profit: {active_params['take_profit_pct']*100}%")
                 
-            # Evaluasi Kinerja
-            score = evaluator.run_evaluation()
-            print(f"[EVAL] Candidate Sharpe Score: {score} vs Best: {BEST_SHARPE_SCORE}")
-            
-            # Jika LEBIH BAGUS -> Simpan sebagai Champion & Notify OpenClaw
-            if score > BEST_SHARPE_SCORE:
-                BEST_SHARPE_SCORE = score
-                print(f"🔥 NEW CHAMPION FOUND! Sharpe: {score}")
-                notify_openclaw(candidate, score)
-            else:
-                print("❌ Performance lower or invalid. Reverting...")
-                
+                # TODO: Panggil fungsi API order Binance / Smart Contract dApp Anda di sini
+
+            # 4. Sleep Interval (misal: Cek / Re-evaluate setiap 1 jam)
+            print("💤 Waiting for next interval...")
+            time.sleep(3600)
+
+        except KeyboardInterrupt:
+            print("\n🛑 Bot stopped gracefully by user.")
+            break
         except Exception as e:
-            print(f"Loop Exception: {e}")
-            
-        time.sleep(120)  # Siklus eksperimen setiap 2 menit
+            print(f"❌ Error encountered: {e}")
+            time.sleep(10)
+
 
 if __name__ == "__main__":
-    research_loop()
+    main()
