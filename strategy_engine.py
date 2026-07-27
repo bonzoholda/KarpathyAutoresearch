@@ -73,12 +73,12 @@ class BayesianStrategyEngine:
 
         return sharpe
 
-    def heal_and_find_winner(self, n_trials: int = 100):
+def heal_and_find_winner(self, n_trials: int = 100):
         """
         Mekanisme Self-Healing:
         1. Split Data (70% In-Sample / 30% Out-of-Sample)
         2. Bayesian Search via Optuna
-        3. Validering Out-Of-Sample (OOS)
+        3. Validation Out-Of-Sample (OOS)
         """
         split_idx = int(len(self.df) * 0.7)
         train_df = self.df.iloc[:split_idx]
@@ -100,10 +100,15 @@ class BayesianStrategyEngine:
         val_portfolio = self.run_backtest(val_df, best_params)
         val_sharpe = val_portfolio.sharpe_ratio()
         val_trades = val_portfolio.trades.count()
-        val_win_rate = val_portfolio.win_rate()
+        
+        # FIX: Panggil win_rate() dari atribut trades
+        val_win_rate = val_portfolio.trades.win_rate()
+
+        # Handle jika belum ada trade sama sekali di OOS agar tidak NaN
+        win_rate_pct = (val_win_rate * 100) if not np.isnan(val_win_rate) else 0.0
 
         print(
-            f"🧪 [OOS Validation] Sharpe: {val_sharpe:.2f} | WinRate: {val_win_rate*100:.1f}% | Trades: {val_trades}"
+            f"🧪 [OOS Validation] Sharpe: {val_sharpe:.2f} | WinRate: {win_rate_pct:.1f}% | Trades: {val_trades}"
         )
 
         # Kriteria Mutlak "Strategy Winner"
