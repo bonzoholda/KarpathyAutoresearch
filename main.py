@@ -25,6 +25,10 @@ TOP_10_PAIRS = [
 TIMEFRAME = '1h'
 CANDLE_LIMIT = 1000  # ~41 hari data historis
 
+# Definisikan 2 jenis waktu tunggu di bagian atas file
+IDLE_TIME_SUCCESS = 3600  # 1 Jam jika strategi pemenang ditemukan
+IDLE_TIME_RETRY = 300     # 5 Menit jika TIDAK menemukan strategi pemenang (Fast Retry)
+
 
 def fetch_live_market_data(symbol: str, timeframe: str = TIMEFRAME, limit: int = CANDLE_LIMIT) -> pd.DataFrame:
     """
@@ -89,16 +93,21 @@ def main():
 
     while True:
         try:
-            # Re-evaluate/heal jika belum ada strategi aktif
+            current_sleep_time = IDLE_TIME_SUCCESS
+
+            # Evaluasi/heal jika belum ada strategi aktif
             if not is_healthy or active_params is None:
                 new_params, success = scan_top_pairs_for_winner()
 
                 if success:
                     active_params = new_params
                     is_healthy = True
+                    current_sleep_time = IDLE_TIME_SUCCESS
                     print("\n✅ Active Strategy Hot-Reloaded with Multi-Asset Winner!")
                 else:
-                    print("\n⏳ Retrying full scan in next cycle...")
+                    # 💡 MODIFIKASI: Gunakan waktu tunggu pendek jika gagal menemukan pemenang
+                    current_sleep_time = IDLE_TIME_RETRY
+                    print(f"\n⏳ No winner found. Retrying scan in {IDLE_TIME_RETRY // 60} minutes...")
                     is_healthy = False
 
             # Log status parameter aktif
@@ -111,8 +120,9 @@ def main():
                 print(f"   -> Stop Loss: {active_params['stop_loss_pct']*100:.2f}%")
                 print(f"   -> Take Profit: {active_params['take_profit_pct']*100:.2f}%")
 
-            print("\n💤 Research Engine idling... Waiting 1 hour for next analysis cycle.")
-            time.sleep(3600)
+            # Dynamic Sleep
+            print(f"\n💤 Research Engine idling... Waiting {current_sleep_time // 60} minutes for next cycle.")
+            time.sleep(current_sleep_time)
 
         except KeyboardInterrupt:
             print("\n🛑 Research Engine stopped gracefully.")
