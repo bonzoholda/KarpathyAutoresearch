@@ -22,6 +22,7 @@ def fetch_klines(symbol="BTCUSDT", interval="15m", limit=1000):
         
     return df
 
+
 def run_evaluation():
     try:
         df = fetch_klines()
@@ -31,6 +32,10 @@ def run_evaluation():
             importlib.reload(sys.modules['strategy_candidate'])
         else:
             import strategy_candidate
+            
+        # PERBAIKAN: Pastikan pandas & numpy selalu tersedia di modul strategy_candidate
+        strategy_candidate.pd = pd
+        strategy_candidate.np = np
             
         signals = strategy_candidate.generate_signals(df)
         
