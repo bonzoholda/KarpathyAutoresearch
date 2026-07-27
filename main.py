@@ -17,7 +17,6 @@ OPENCLAW_TOKEN = os.getenv("OPENCLAW_GATEWAY_TOKEN", "")
 BEST_SHARPE_SCORE = 1.2  # Baseline awal
 
 def mutate_strategy_code():
-    """Menggunakan LLM untuk menulis ulang strategy_candidate.py"""
     with open("strategy_candidate.py", "r") as f:
         current_code = f.read()
 
@@ -26,9 +25,13 @@ def mutate_strategy_code():
     ```python
     {current_code}
     ```
-    Tugas Anda: Buat variasi/mutasi logika baru untuk fungsi `generate_signals(df)`.
-    Gunakan kombinasi teknik seperti EMA, RSI, Bollinger Bands, ATR, atau Volume Spikes.
-    Aturan: Output HARUS murni kode Python valid tanpa penjelasan atau markdown.
+    Tugas Anda: Buat variasi/mutasi logika baru untuk fungsi `generate_signals(df: pd.DataFrame) -> pd.Series`.
+    
+    ATURAN STRICT:
+    1. `df` sudah memiliki kolom float: 'open', 'high', 'low', 'close', 'volume'.
+    2. Gunakan pustaka standar pandas / numpy saja (misal: df['close'].rolling(20).mean()).
+    3. Output HARUS MURNI kode Python tanpa penjelasan, tanpa tag ```python.
+    4. Kembalikan pd.Series dengan nilai 1 (BUY), -1 (SELL), atau 0 (HOLD).
     """
 
     res = client.chat.completions.create(
