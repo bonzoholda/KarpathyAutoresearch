@@ -120,23 +120,32 @@ class BayesianStrategyEngine:
             return None, False
 
     def _save_winner_config(self, params: dict):
-        # 1. Simpan Lokal
         os.makedirs("config", exist_ok=True)
         with open(CONFIG_PATH, "w") as f:
             json.dump(params, f, indent=4)
             
-        # 2. Kirim Webhook ke Repo 2 (Trade Executor)
-        EXECUTOR_URL = os.getenv("EXECUTOR_WEBHOOK_URL", "https://okx-trade-executor.up.railway.app/webhook/strategy-update")
+        EXECUTOR_URL = os.getenv("EXECUTOR_WEBHOOK_URL", "https://okx-executor-production.up.railway.app/webhook/strategy-update")
         WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "my_secret_token_123")
+        
+        # Format payload presisi sesuai Pydantic model Repo 2
+        payload = {
+            "symbol": str(params.get("symbol", "BTC/USDT")),
+            "rsi_period": int(params["rsi_period"]),
+            "rsi_lower": float(params["rsi_lower"]),
+            "rsi_upper": float(params["rsi_upper"]),
+            "stop_loss_pct": float(params["stop_loss_pct"]),
+            "take_profit_pct": float(params["take_profit_pct"])
+        }
         
         try:
             headers = {"Authorization": f"Bearer {WEBHOOK_SECRET}"}
-            response = requests.post(EXECUTOR_URL, json=params, headers=headers, timeout=5)
+            response = requests.post(EXECUTOR_URL, json=payload, headers=headers, timeout=5)
             if response.status_code == 200:
                 print("🚀 Successfully pushed Winner Strategy to OKX Trade Executor via Webhook!")
+            else:
+                print(f"⚠️ Webhook response error [{response.status_code}]: {response.text}")
         except Exception as e:
             print(f"⚠️ Failed to send webhook to Executor: {e}")
-
 
 def load_active_config():
     """Load parameter strategi pemenang yang sedang aktif"""
