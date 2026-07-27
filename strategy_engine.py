@@ -73,7 +73,7 @@ class BayesianStrategyEngine:
 
         return sharpe
 
-def heal_and_find_winner(self, n_trials: int = 100):
+    def heal_and_find_winner(self, n_trials: int = 100):
         """
         Mekanisme Self-Healing:
         1. Split Data (70% In-Sample / 30% Out-of-Sample)
@@ -100,11 +100,9 @@ def heal_and_find_winner(self, n_trials: int = 100):
         val_portfolio = self.run_backtest(val_df, best_params)
         val_sharpe = val_portfolio.sharpe_ratio()
         val_trades = val_portfolio.trades.count()
-        
+
         # FIX: Panggil win_rate() dari atribut trades
         val_win_rate = val_portfolio.trades.win_rate()
-
-        # Handle jika belum ada trade sama sekali di OOS agar tidak NaN
         win_rate_pct = (val_win_rate * 100) if not np.isnan(val_win_rate) else 0.0
 
         print(
