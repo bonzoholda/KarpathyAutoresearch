@@ -43,24 +43,45 @@ def mutate_strategy_code():
     new_code = res.choices[0].message.content.replace("```python", "").replace("```", "").strip()
     return new_code
 
-def notify_openclaw(new_code, score):
-    """Mengirim strategi baru ke OpenClaw Webhook Listener"""
-    if not OPENCLAW_WEBHOOK_URL:
-        print("Webhook URL empty. Skipping notification.")
-        return
 
-    payload = {
-        "token": OPENCLAW_TOKEN,
-        "event": "STRATEGY_MUTATION_SUCCESS",
-        "sharpe_score": score,
-        "strategy_code": new_code,
-        "instructions": f"Gunakan indikator teknikal berikut sebagai acuan utama analisis: {new_code}"
+def notify_openclaw(new_code, score):
+    """Mengirim strategi baru ke OpenClaw Native API Gateway"""
+    openclaw_domain = os.getenv("OPENCLAW_DOMAIN", "https://openclawshit.up.railway.app").rstrip("/")
+    openclaw_token = os.getenv("OPENCLAW_GATEWAY_TOKEN", "MySuperSecretToken123!")
+    
+    # Daftar endpoint resmi OpenClaw Gateway
+    endpoints = [
+        f"{openclaw_domain}/api/config",
+        f"{openclaw_domain}/api/gateway/config",
+        f"{openclaw_domain}/api/v1/config"
+    ]
+    
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {openclaw_token}"
     }
-    try:
-        r = requests.post(OPENCLAW_WEBHOOK_URL, json=payload, timeout=10)
-        print(f"⚡ Pushed to OpenClaw: Status {r.status_code}")
-    except Exception as e:
-        print(f"Failed to notify OpenClaw: {e}")
+    
+    payload = {
+        "token": openclaw_token,
+        "agent_id": "Analyst-Sentinel",
+        "system_prompt_patch": f"REGIME UPDATE (Sharpe Score: {score}):\nAturan Indikator Kunci:\n{new_code}"
+    }
+    
+    success = False
+    for ep in endpoints:
+        try:
+            r = requests.post(ep, json=payload, headers=headers, timeout=5)
+            if r.status_code in [200, 201, 202]:
+                print(f"⚡ Pushed to OpenClaw ({ep}): Status {r.status_code} - HOT-RELOAD SUCCESS!")
+                success = True
+                break
+            else:
+                print(f"⚠️ Endpoint {ep} responded with: Status {r.status_code}")
+        except Exception as e:
+            continue
+            
+    if not success:
+        print("❌ All OpenClaw endpoints returned non-200 status. Verify OpenClaw API Gateway status.")
 
 def research_loop():
     global BEST_SHARPE_SCORE
