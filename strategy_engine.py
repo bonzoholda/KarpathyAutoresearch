@@ -126,7 +126,7 @@ class BayesianStrategyEngine:
             json.dump(params, f, indent=4)
             
         # 2. Kirim Webhook ke Repo 2 (Trade Executor)
-        EXECUTOR_URL = os.getenv("EXECUTOR_WEBHOOK_URL", "https://okx-executor-production.up.railway.app/webhook/strategy-update")
+        EXECUTOR_URL = os.getenv("EXECUTOR_WEBHOOK_URL", "https://okx-trade-executor.up.railway.app/webhook/strategy-update")
         WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "my_secret_token_123")
         
         try:
