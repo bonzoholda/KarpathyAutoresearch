@@ -27,17 +27,17 @@ def run_evaluation():
     try:
         df = fetch_klines()
         
-        # Reload modul strategi agar membaca versi mutasi terbaru dari LLM
+        # PERBAIKAN: Import/Reload modul strategy_candidate secara aman
         if 'strategy_candidate' in sys.modules:
-            importlib.reload(sys.modules['strategy_candidate'])
+            strategy_mod = importlib.reload(sys.modules['strategy_candidate'])
         else:
-            import strategy_candidate
+            strategy_mod = importlib.import_module('strategy_candidate')
             
-        # PERBAIKAN: Pastikan pandas & numpy selalu tersedia di modul strategy_candidate
-        strategy_candidate.pd = pd
-        strategy_candidate.np = np
+        # Suntikkan pandas & numpy secara eksplisit ke namespace modul
+        setattr(strategy_mod, 'pd', pd)
+        setattr(strategy_mod, 'np', np)
             
-        signals = strategy_candidate.generate_signals(df)
+        signals = strategy_mod.generate_signals(df)
         
         # Pastikan output sinyal berukuran sama dengan dataframe
         if len(signals) != len(df):
