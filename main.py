@@ -112,13 +112,14 @@ def main():
 
             # Log status parameter aktif
             if is_healthy:
-                print("\n🤖 [Research Engine] Current Active Winner Strategy:")
-                print(f"   -> Target Pair: {active_params.get('symbol', 'BTC/USDT')}")
-                print(f"   -> RSI Period: {active_params['rsi_period']}")
+                print("\n🤖 [Research Engine] Current Active Futures Winner Strategy:")
+                print(f"   -> Target Pair : {active_params.get('symbol', 'BTC/USDT')}")
+                print(f"   -> Direction   : {active_params.get('direction', 'LONG')} 🚀")
+                print(f"   -> RSI Period  : {active_params['rsi_period']}")
                 print(f"   -> Entry Threshold: {active_params['rsi_lower']}")
-                print(f"   -> Exit Threshold: {active_params['rsi_upper']}")
-                print(f"   -> Stop Loss: {active_params['stop_loss_pct']*100:.2f}%")
-                print(f"   -> Take Profit: {active_params['take_profit_pct']*100:.2f}%")
+                print(f"   -> Exit Threshold : {active_params['rsi_upper']}")
+                print(f"   -> Stop Loss   : {active_params['stop_loss_pct']*100:.2f}%")
+                print(f"   -> Take Profit : {active_params['take_profit_pct']*100:.2f}%")
 
             # Dynamic Sleep
             print(f"\n💤 Research Engine idling... Waiting {current_sleep_time // 60} minutes for next cycle.")
