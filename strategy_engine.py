@@ -62,8 +62,8 @@ class BayesianStrategyEngine:
             "rsi_period": trial.suggest_int("rsi_period", 5, 25),
             "rsi_lower": trial.suggest_int("rsi_lower", 15, 40),
             "rsi_upper": trial.suggest_int("rsi_upper", 60, 85),
-            "stop_loss_pct": trial.suggest_float("stop_loss_pct", 0.015, 0.05, step=0.005),
-            "take_profit_pct": trial.suggest_float("take_profit_pct", 0.02, 0.10, step=0.005),
+            "stop_loss_pct": trial.suggest_float("stop_loss_pct", 0.010, 0.020, step=0.002),  # SL diperketat ke 1.0% - 2.0%
+            "take_profit_pct": trial.suggest_float("take_profit_pct", 0.030, 0.080, step=0.005), # TP dinaikkan ke 3.0% - 8.0%
         }
 
         portfolio = self.run_backtest(train_df, params)
