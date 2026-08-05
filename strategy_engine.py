@@ -22,34 +22,55 @@ class BayesianStrategyEngine:
         sl_stop = float(params["stop_loss_pct"])
         tp_stop = float(params["take_profit_pct"])
         direction = params["direction"]
+        strategy_type = params.get("strategy_type", "RSI_MEAN_REVERSION")
 
+        # Indikator Dasar: RSI & EMA 200 Filter
         rsi = vbt.RSI.run(df["close"], window=rsi_period).rsi
+        ema200 = vbt.MA.run(df["close"], window=200, ewm=True).ma
 
-        # Skenario LONG
+        # Condition Trend Filter
+        is_uptrend = df["close"] > ema200
+        is_downtrend = df["close"] < ema200
+
+        # Logika Sinyal Entry Berdasarkan Tipe Strategi
+        if strategy_type == "RSI_MEAN_REVERSION":
+            # Pure Mean Reversion (Extremes) dengan Filter Tren Utama
+            if direction == "LONG":
+                entries = (rsi < rsi_lower) & is_uptrend
+                exits = rsi > rsi_upper
+            else:  # SHORT
+                entries = (rsi > rsi_upper) & is_downtrend
+                exits = rsi < rsi_lower
+
+        else:  # EMA_PULLBACK_TREND (Trend-Following Momentum)
+            # Membeli saat pullback ringan di tengah tren yang kuat
+            if direction == "LONG":
+                entries = (rsi < rsi_lower) & is_uptrend
+                exits = (rsi > rsi_upper) | (~is_uptrend)
+            else:  # SHORT
+                entries = (rsi > rsi_upper) & is_downtrend
+                exits = (rsi < rsi_lower) | (~is_downtrend)
+
+        # Backtest Engine via VectorBT (Timeframe 15m)
         if direction == "LONG":
-            entries = rsi < rsi_lower
-            exits = rsi > rsi_upper
             portfolio = vbt.Portfolio.from_signals(
                 df["close"],
                 entries=entries,
                 exits=exits,
                 sl_stop=sl_stop,
                 tp_stop=tp_stop,
-                freq="1h",
+                freq="15m",
                 init_cash=1000,
-                fees=0.0006,  # Standard Futures Fee ~0.06%
+                fees=0.0006,  # OKX Futures Standard Fee ~0.06%
             )
-        # Skenario SHORT
-        else:
-            entries = rsi > rsi_upper
-            exits = rsi < rsi_lower
+        else:  # SHORT
             portfolio = vbt.Portfolio.from_signals(
                 df["close"],
                 short_entries=entries,
                 short_exits=exits,
                 sl_stop=sl_stop,
                 tp_stop=tp_stop,
-                freq="1h",
+                freq="15m",
                 init_cash=1000,
                 fees=0.0006,
             )
@@ -57,13 +78,25 @@ class BayesianStrategyEngine:
         return portfolio
 
     def _objective(self, trial, train_df: pd.DataFrame):
+        strategy_type = trial.suggest_categorical("strategy_type", ["RSI_MEAN_REVERSION", "EMA_PULLBACK_TREND"])
+        direction = trial.suggest_categorical("direction", ["LONG", "SHORT"])
+
+        # Pelonggaran rentang pencarian untuk menangkap sinyal trend-following lebih sering
+        if strategy_type == "EMA_PULLBACK_TREND":
+            rsi_lower = trial.suggest_int("rsi_lower", 35, 48)  # Pullback level untuk Long
+            rsi_upper = trial.suggest_int("rsi_upper", 52, 65)  # Pullback level untuk Short
+        else:
+            rsi_lower = trial.suggest_int("rsi_lower", 20, 38)
+            rsi_upper = trial.suggest_int("rsi_upper", 62, 80)
+
         params = {
-            "direction": trial.suggest_categorical("direction", ["LONG", "SHORT"]),
+            "strategy_type": strategy_type,
+            "direction": direction,
             "rsi_period": trial.suggest_int("rsi_period", 5, 14),
-            "rsi_lower": trial.suggest_int("rsi_lower", 25, 42),
-            "rsi_upper": trial.suggest_int("rsi_upper", 58, 75),
-            "stop_loss_pct": trial.suggest_float("stop_loss_pct", 0.010, 0.020, step=0.002),  # SL diperketat ke 1.0% - 2.0%
-            "take_profit_pct": trial.suggest_float("take_profit_pct", 0.030, 0.080, step=0.005), # TP dinaikkan ke 3.0% - 8.0%
+            "rsi_lower": rsi_lower,
+            "rsi_upper": rsi_upper,
+            "stop_loss_pct": trial.suggest_float("stop_loss_pct", 0.010, 0.020, step=0.002), # SL diperketat (1.0% - 2.0%)
+            "take_profit_pct": trial.suggest_float("take_profit_pct", 0.025, 0.080, step=0.005), # TP (2.5% - 8.0%)
         }
 
         portfolio = self.run_backtest(train_df, params)
@@ -71,17 +104,18 @@ class BayesianStrategyEngine:
         max_dd = abs(portfolio.max_drawdown())
         trades_count = portfolio.trades.count()
 
-        if trades_count < 8 or max_dd > 0.20 or np.isnan(sharpe):
+        # Pada timeframe 15m, pastikan minimal terjadi 10 transaksi pada masa training
+        if trades_count < 10 or max_dd > 0.18 or np.isnan(sharpe):
             return -999.0
 
         return sharpe
 
-    def heal_and_find_winner(self, n_trials: int = 100):
+    def heal_and_find_winner(self, n_trials: int = 120):
         split_idx = int(len(self.df) * 0.7)
         train_df = self.df.iloc[:split_idx]
         val_df = self.df.iloc[split_idx:]
 
-        print("🔍 [Self-Healing] Running Bayesian Futures Optimization...")
+        print("🔍 [Self-Healing] Running Bayesian Futures Optimization (Trend-Following Enabled)...")
 
         study = optuna.create_study(
             direction="maximize", sampler=optuna.samplers.TPESampler()
@@ -91,7 +125,9 @@ class BayesianStrategyEngine:
         best_params = study.best_params
         best_in_sample_sharpe = study.best_value
 
-        print(f"📊 Candidate Found ({best_params['direction']}) | In-Sample Sharpe: {best_in_sample_sharpe:.2f}")
+        print(
+            f"📊 Candidate Found ({best_params['strategy_type']} | {best_params['direction']}) | In-Sample Sharpe: {best_in_sample_sharpe:.2f}"
+        )
 
         val_portfolio = self.run_backtest(val_df, best_params)
         val_sharpe = val_portfolio.sharpe_ratio()
@@ -103,7 +139,7 @@ class BayesianStrategyEngine:
             f"🧪 [OOS Validation] Direction: {best_params['direction']} | Sharpe: {val_sharpe:.2f} | WinRate: {win_rate_pct:.1f}% | Trades: {val_trades}"
         )
 
-        if val_sharpe > 1.0 and val_trades >= 3:
+        if val_sharpe > 1.0 and val_trades >= 4:
             print("🏆 FUTURES STRATEGY WINNER VALIDATED! Saving parameters...")
             self._save_winner_config(best_params)
             return best_params, True
