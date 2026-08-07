@@ -95,7 +95,7 @@ class BayesianStrategyEngine:
             "rsi_period": trial.suggest_int("rsi_period", 5, 14),
             "rsi_lower": rsi_lower,
             "rsi_upper": rsi_upper,
-            "stop_loss_pct": trial.suggest_float("stop_loss_pct", 0.010, 0.020, step=0.002), # SL diperketat (1.0% - 2.0%)
+            "stop_loss_pct": trial.suggest_float("stop_loss_pct", 0.008, 0.012, step=0.001), # SL diperketat (1.0% - 2.0%)
             "take_profit_pct": trial.suggest_float("take_profit_pct", 0.025, 0.080, step=0.005), # TP (2.5% - 8.0%)
         }
 
