@@ -1,15 +1,17 @@
 import time
+import requests
+import os
 import ccxt
 import pandas as pd
 import numpy as np
 from strategy_engine import BayesianStrategyEngine, load_active_config
 
-# Inisialisasi Binance/OKX Public Client (Menggunakan Binance Public REST API untuk data feed cepat)
+# Inisialisasi Public Client
 exchange = ccxt.binance({
     'enableRateLimit': True,
 })
 
-# List Top 10 Pairs Paling Likuid (Non-Stablecoin)
+# List Top 10 Pairs Paling Likuid
 TOP_10_PAIRS = [
     'BTC/USDT',
     'ETH/USDT',
@@ -24,17 +26,30 @@ TOP_10_PAIRS = [
 ]
 
 TIMEFRAME = '15m'
-CANDLE_LIMIT = 1000  # ~10 hari data historis pada TF 15m
+CANDLE_LIMIT = 1000
 
-# Definisikan interval waktu tunggu untuk Research Loop
-IDLE_TIME_SUCCESS = 3600  # 1 Jam jika strategi pemenang ditemukan
-IDLE_TIME_RETRY = 300     # 5 Menit jika TIDAK menemukan strategi pemenang (Fast Retry)
+# Waktu Tunggu Dynamic
+IDLE_TIME_FULL_SLOTS = 3600   # 60 Menit jika 3 Slot penuh
+IDLE_TIME_SEARCH_SLOTS = 300  # 5 Menit jika masih ada slot kosong (Fast Hunt)
+
+EXECUTOR_URL = os.getenv("EXECUTOR_WEBHOOK_URL", "https://okx-trade-executor.up.railway.app/webhook/strategy-update")
+
+
+def get_executor_active_slots_count() -> int:
+    """Mengecek jumlah slot aktif di Executor (Repo 2) via API GET /position"""
+    try:
+        # Mengambil base URL dari EXECUTOR_URL
+        base_url = EXECUTOR_URL.split("/webhook")[0]
+        res = requests.get(f"{base_url}/position", timeout=3)
+        if res.status_code == 200:
+            data = res.json()
+            return data.get("active_slots_count", 0)
+    except Exception as e:
+        print(f"⚠️ Could not check Executor slots status: {e}")
+    return 0
 
 
 def fetch_live_market_data(symbol: str, timeframe: str = TIMEFRAME, limit: int = CANDLE_LIMIT) -> pd.DataFrame:
-    """
-    Menarik data OHLCV dari Public REST API untuk symbol tertentu
-    """
     try:
         ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
         df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
@@ -47,10 +62,6 @@ def fetch_live_market_data(symbol: str, timeframe: str = TIMEFRAME, limit: int =
 
 
 def scan_top_pairs_for_winner():
-    """
-    Turnamen Pemindaian Multi-Asset: Memindai seluruh Top 10 pairs, membandingkan skor
-    Sharpe Ratio, dan memilih 1 strategi dengan Sharpe Ratio OOS tertinggi sebagai Winner Mutlak.
-    """
     print("\n" + "=" * 65)
     print("🔎 Starting Multi-Asset Tournament Scan across Top 10 Pairs...")
     print("=" * 65 + "\n")
@@ -72,14 +83,10 @@ def scan_top_pairs_for_winner():
         latest_price = float(df['close'].iloc[-1])
         print(f"📊 Market Price: ${latest_price:,.4f}")
 
-        # Inisialisasi Engine untuk pair saat ini
         engine = BayesianStrategyEngine(df)
-        
-        # Jalankan Bayesian Optimization (120 trials per pair)
         params, success = engine.heal_and_find_winner(n_trials=120)
 
         if success and params:
-            # Uji ulang pada segmen Out-of-Sample Validation (30% data terakhir) untuk menghitung Sharpe Ratio OOS
             split_idx = int(len(df) * 0.7)
             val_df = df.iloc[split_idx:]
             val_portfolio = engine.run_backtest(val_df, params)
@@ -90,7 +97,6 @@ def scan_top_pairs_for_winner():
 
             print(f"🎯 [{pair}] Valid Candidate | OOS Sharpe Ratio: {val_sharpe:.2f}")
 
-            # Seleksi Turnamen: Pilih kandidat dengan Sharpe Ratio tertinggi di antara seluruh Top 10 pairs
             if val_sharpe > highest_oos_sharpe:
                 highest_oos_sharpe = val_sharpe
                 params['symbol'] = pair
@@ -101,13 +107,11 @@ def scan_top_pairs_for_winner():
         else:
             print(f"❌ [{pair}] No valid strategy passed OOS Validation. Moving to next pair...\n")
 
-    # Keputusan Akhir Turnamen Multi-Asset
     if best_candidate_params and winning_pair and winning_engine:
         print("\n" + "🎉 " * 15)
         print(f"🏆 TOURNAMENT WINNER FOUND! Selected Pair: [{winning_pair}] (OOS Sharpe: {highest_oos_sharpe:.2f})")
         print("🎉 " * 15)
         
-        # Push strategi pemenang mutlak ke OKX Executor via Webhook & Simpan Config Lokal
         winning_engine._save_winner_config(best_candidate_params)
         return best_candidate_params, True
     else:
@@ -116,42 +120,38 @@ def scan_top_pairs_for_winner():
 
 
 def main():
-    print("🚀 Starting Bayesian Autoresearch Engine (Multi-Asset Top 10 Scanner)...")
+    print("🚀 Starting Bayesian Autoresearch Engine (Dynamic Multi-Slot Scanner)...")
 
     active_params = load_active_config()
-    is_healthy = active_params is not None
 
     while True:
         try:
-            current_sleep_time = IDLE_TIME_SUCCESS
+            # 1. Cek berapa slot yang sedang aktif di Executor (Repo 2)
+            active_slots = get_executor_active_slots_count()
+            print(f"\n📊 Current Active Trades in Executor: {active_slots}/3 Slots occupied.")
 
-            # Selalu jalankan turnamen pencarian strategi baru di setiap siklus
-            new_params, success = scan_top_pairs_for_winner()
-
-            if success:
-                active_params = new_params
-                is_healthy = True
-                current_sleep_time = IDLE_TIME_SUCCESS
-                print("\n✅ Active Strategy Hot-Reloaded with Multi-Asset Winner!")
+            # 2. Tentukan berapa lama harus idle setelah scanning
+            if active_slots >= 3:
+                current_sleep_time = IDLE_TIME_FULL_SLOTS
+                print(f"🔒 All 3 slots are occupied! Research engine will sleep for {IDLE_TIME_FULL_SLOTS // 60} minutes.")
             else:
-                # Gunakan waktu tunggu pendek jika gagal menemukan pemenang
-                current_sleep_time = IDLE_TIME_RETRY
-                print(f"\n⏳ No winner found. Retrying scan in {IDLE_TIME_RETRY // 60} minutes...")
-                if active_params is None:
-                    is_healthy = False
+                current_sleep_time = IDLE_TIME_SEARCH_SLOTS
+                print(f"🎯 Slots available ({3 - active_slots} slots free)! Running fast tournament scan (5-min retry cycle)...")
 
-            # Log status parameter aktif
-            if is_healthy and active_params:
-                print("\n🤖 [Research Engine] Current Active Futures Winner Strategy:")
+                # Jalankan pencarian jika slot masih tersedia
+                new_params, success = scan_top_pairs_for_winner()
+                if success:
+                    active_params = new_params
+                    print("\n✅ Winner Strategy Hot-Reloaded to Executor!")
+
+            # Log status
+            if active_params:
+                print("\n🤖 [Research Engine] Latest Winner Strategy Pushed:")
                 print(f"   -> Target Pair : {active_params.get('symbol', 'BTC/USDT')}")
                 print(f"   -> Direction   : {active_params.get('direction', 'LONG')} 🚀")
                 print(f"   -> RSI Period  : {active_params['rsi_period']}")
-                print(f"   -> Entry Threshold: {active_params['rsi_lower']}")
-                print(f"   -> Exit Threshold : {active_params['rsi_upper']}")
-                print(f"   -> Stop Loss   : {active_params['stop_loss_pct']*100:.2f}%")
-                print(f"   -> Take Profit : {active_params['take_profit_pct']*100:.2f}%")
+                print(f"   -> Entry Target: RSI {active_params['rsi_lower']}")
 
-            # Dynamic Sleep
             print(f"\n💤 Research Engine idling... Waiting {current_sleep_time // 60} minutes for next cycle.")
             time.sleep(current_sleep_time)
 
