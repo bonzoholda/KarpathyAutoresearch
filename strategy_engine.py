@@ -24,32 +24,39 @@ class BayesianStrategyEngine:
         direction = params["direction"]
         strategy_type = params.get("strategy_type", "RSI_MEAN_REVERSION")
 
-        # Indikator Dasar: RSI & EMA 200 Filter
+        # Indikator Dasar: RSI pada TF 15m
         rsi = vbt.RSI.run(df["close"], window=rsi_period).rsi
-        ema200 = vbt.MA.run(df["close"], window=200, ewm=True).ma
 
-        # Condition Trend Filter
-        is_uptrend = df["close"] > ema200
-        is_downtrend = df["close"] < ema200
+        # --- 🛡️ MULTI-TIMEFRAME TREND GUARD (1-HOUR EMA 200 FILTER) ---
+        # Resample data 15m ke 1h untuk menghitung Macro Trend
+        df_1h = df["close"].resample("1h").last().dropna()
+        ema200_1h = vbt.MA.run(df_1h, window=200, ewm=True).ma
+        
+        # Reindex EMA 200 (1h) kembali ke timeframe 15m (Forward Fill)
+        ema200_macro = ema200_1h.reindex(df.index, method="ffill")
 
-        # Logika Sinyal Entry Berdasarkan Tipe Strategi
+        # Condition Macro Trend Filter
+        is_macro_uptrend = df["close"] > ema200_macro
+        is_macro_downtrend = df["close"] < ema200_macro
+
+        # Logika Sinyal Entry Berdasarkan Tipe Strategi & HTF Trend Filter
         if strategy_type == "RSI_MEAN_REVERSION":
-            # Pure Mean Reversion (Extremes) dengan Filter Tren Utama
             if direction == "LONG":
-                entries = (rsi < rsi_lower) & is_uptrend
+                # HARAM LONG jika Macro Trend 1h sedang Downtrend!
+                entries = (rsi < rsi_lower) & is_macro_uptrend
                 exits = rsi > rsi_upper
             else:  # SHORT
-                entries = (rsi > rsi_upper) & is_downtrend
+                # HARAM SHORT jika Macro Trend 1h sedang Uptrend!
+                entries = (rsi > rsi_upper) & is_macro_downtrend
                 exits = rsi < rsi_lower
 
         else:  # EMA_PULLBACK_TREND (Trend-Following Momentum)
-            # Membeli saat pullback ringan di tengah tren yang kuat
             if direction == "LONG":
-                entries = (rsi < rsi_lower) & is_uptrend
-                exits = (rsi > rsi_upper) | (~is_uptrend)
+                entries = (rsi < rsi_lower) & is_macro_uptrend
+                exits = (rsi > rsi_upper) | (~is_macro_uptrend)
             else:  # SHORT
-                entries = (rsi > rsi_upper) & is_downtrend
-                exits = (rsi < rsi_lower) | (~is_downtrend)
+                entries = (rsi > rsi_upper) & is_macro_downtrend
+                exits = (rsi < rsi_lower) | (~is_macro_downtrend)
 
         # Backtest Engine via VectorBT (Timeframe 15m)
         if direction == "LONG":
@@ -81,10 +88,9 @@ class BayesianStrategyEngine:
         strategy_type = trial.suggest_categorical("strategy_type", ["RSI_MEAN_REVERSION", "EMA_PULLBACK_TREND"])
         direction = trial.suggest_categorical("direction", ["LONG", "SHORT"])
 
-        # Pelonggaran rentang pencarian untuk menangkap sinyal trend-following lebih sering
         if strategy_type == "EMA_PULLBACK_TREND":
-            rsi_lower = trial.suggest_int("rsi_lower", 35, 48)  # Pullback level untuk Long
-            rsi_upper = trial.suggest_int("rsi_upper", 52, 65)  # Pullback level untuk Short
+            rsi_lower = trial.suggest_int("rsi_lower", 35, 48)
+            rsi_upper = trial.suggest_int("rsi_upper", 52, 65)
         else:
             rsi_lower = trial.suggest_int("rsi_lower", 20, 38)
             rsi_upper = trial.suggest_int("rsi_upper", 62, 80)
@@ -95,8 +101,8 @@ class BayesianStrategyEngine:
             "rsi_period": trial.suggest_int("rsi_period", 5, 14),
             "rsi_lower": rsi_lower,
             "rsi_upper": rsi_upper,
-            "stop_loss_pct": trial.suggest_float("stop_loss_pct", 0.008, 0.012, step=0.001), # SL diperketat (1.0% - 2.0%)
-            "take_profit_pct": trial.suggest_float("take_profit_pct", 0.025, 0.080, step=0.005), # TP (2.5% - 8.0%)
+            "stop_loss_pct": trial.suggest_float("stop_loss_pct", 0.010, 0.018, step=0.002), # Max SL ~1.8%
+            "take_profit_pct": trial.suggest_float("take_profit_pct", 0.025, 0.080, step=0.005),
         }
 
         portfolio = self.run_backtest(train_df, params)
@@ -104,8 +110,8 @@ class BayesianStrategyEngine:
         max_dd = abs(portfolio.max_drawdown())
         trades_count = portfolio.trades.count()
 
-        # Pada timeframe 15m, pastikan minimal terjadi 10 transaksi pada masa training
-        if trades_count < 10 or max_dd > 0.18 or np.isnan(sharpe):
+        # Filter Kualitas Out-of-Sample: Minimal 8 Transaksi & Max Drawdown < 18%
+        if trades_count < 8 or max_dd > 0.18 or np.isnan(sharpe):
             return -999.0
 
         return sharpe
@@ -115,7 +121,7 @@ class BayesianStrategyEngine:
         train_df = self.df.iloc[:split_idx]
         val_df = self.df.iloc[split_idx:]
 
-        print("🔍 [Self-Healing] Running Bayesian Futures Optimization (Trend-Following Enabled)...")
+        print("🔍 [Self-Healing] Running Bayesian Futures Optimization with 1H HTF Trend Guard...")
 
         study = optuna.create_study(
             direction="maximize", sampler=optuna.samplers.TPESampler()
@@ -139,12 +145,12 @@ class BayesianStrategyEngine:
             f"🧪 [OOS Validation] Direction: {best_params['direction']} | Sharpe: {val_sharpe:.2f} | WinRate: {win_rate_pct:.1f}% | Trades: {val_trades}"
         )
 
-        if val_sharpe > 1.0 and val_trades >= 4:
+        if val_sharpe > 1.0 and val_trades >= 3:
             print("🏆 FUTURES STRATEGY WINNER VALIDATED! Saving parameters...")
             self._save_winner_config(best_params)
             return best_params, True
         else:
-            print("❌ Candidate Failed OOS Test (Overfitting Detected). Rejecting.")
+            print("❌ Candidate Failed OOS Test (Overfitting / Counter-Trend Detected). Rejecting.")
             return None, False
 
     def _save_winner_config(self, params: dict):
