@@ -21,7 +21,7 @@ TOP_10_PAIRS = [
     'ADA/USDT',
     'DOGE/USDT',
     'AVAX/USDT',
-    'LINK/USDT',
+    'XAUT/USDT',
     'NEAR/USDT'
 ]
 
