@@ -99,7 +99,7 @@ class BayesianStrategyEngine:
         if direction == "SHORT":
             rsi_upper = trial.suggest_int("rsi_upper", 62, 75)
             rsi_lower = trial.suggest_int("rsi_lower", 30, 45)
-            max_sl = 0.015
+            max_sl = 0.016
         else:
             rsi_upper = trial.suggest_int("rsi_upper", 55, 75)
             rsi_lower = trial.suggest_int("rsi_lower", 25, 40)
