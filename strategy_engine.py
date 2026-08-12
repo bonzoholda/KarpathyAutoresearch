@@ -27,15 +27,20 @@ class BayesianStrategyEngine:
         # Indikator Utama: RSI 15m
         rsi = vbt.RSI.run(df["close"], window=rsi_period).rsi
 
-        # --- 🛡️ SINGLE MACRO TREND GUARD (1-HOUR EMA 200 FILTER) ---
-        df_1h = df["close"].resample("1h").last().dropna()
-        ema200_1h = vbt.MA.run(df_1h, window=200, ewm=True).ma
-        ema200_macro = ema200_1h.reindex(df.index, method="ffill")
+        # --- 🛡️ MACRO TREND FILTER (Setara EMA 200 1h pada chart 15m = EMA 800) ---
+        ema_macro = vbt.MA.run(df["close"], window=800, ewm=True).ma
+        
+        # Fallback jika data kurang dari 800 bar, gunakan EMA 200 15m agar sinyal tidak kosong
+        if ema_macro.dropna().empty:
+            ema_macro = vbt.MA.run(df["close"], window=200, ewm=True).ma
 
-        is_macro_uptrend = df["close"] > ema200_macro
-        is_macro_downtrend = df["close"] < ema200_macro
+        is_macro_uptrend = df["close"] > ema_macro
+        is_macro_downtrend = df["close"] < ema_macro
 
-        # --- LOGIKA SINYAL ANEKA STRATEGI ---
+        ema20_15m = vbt.MA.run(df["close"], window=20, ewm=True).ma
+        ema50_15m = vbt.MA.run(df["close"], window=50, ewm=True).ma
+
+        # --- LOGIKA SINYAL ANEKA STRATEGI (DIPERBAIKI) ---
         if strategy_type == "RSI_MEAN_REVERSION":
             if direction == "LONG":
                 entries = (rsi < rsi_lower) & is_macro_uptrend
@@ -45,23 +50,21 @@ class BayesianStrategyEngine:
                 exits = rsi < rsi_lower
 
         elif strategy_type == "EMA_PULLBACK_TREND":
-            ema20_15m = vbt.MA.run(df["close"], window=20, ewm=True).ma
+            # Perbaikan: Pullback terjadi ketika EMA20 > EMA50 (Tren Naik) & RSI Mengalami Dip/Oversold
             if direction == "LONG":
-                entries = (rsi < rsi_lower) & (df["close"] > ema20_15m) & is_macro_uptrend
+                entries = (rsi < rsi_lower) & (ema20_15m > ema50_15m) & is_macro_uptrend
                 exits = (rsi > rsi_upper)
             else:  # SHORT
-                entries = (rsi > rsi_upper) & (df["close"] < ema20_15m) & is_macro_downtrend
+                entries = (rsi > rsi_upper) & (ema20_15m < ema50_15m) & is_macro_downtrend
                 exits = (rsi < rsi_lower)
 
         elif strategy_type == "RSI_MOMENTUM_BREAKOUT":
-            ema20_15m = vbt.MA.run(df["close"], window=20, ewm=True).ma
-            ema50_15m = vbt.MA.run(df["close"], window=50, ewm=True).ma
             if direction == "LONG":
                 entries = (rsi > rsi_upper) & (ema20_15m > ema50_15m) & is_macro_uptrend
-                exits = (rsi < 48)
+                exits = (rsi < 50)
             else:  # SHORT
                 entries = (rsi < rsi_lower) & (ema20_15m < ema50_15m) & is_macro_downtrend
-                exits = (rsi > 52)
+                exits = (rsi > 50)
 
         # Backtest Engine via VectorBT
         if direction == "LONG":
@@ -95,15 +98,13 @@ class BayesianStrategyEngine:
         )
         direction = trial.suggest_categorical("direction", ["LONG", "SHORT"])
 
-        # Parameter RSI Adaptif
+        # Range RSI dibuat lebih elastis agar frekuensi sinyal meningkat
         if direction == "SHORT":
-            rsi_upper = trial.suggest_int("rsi_upper", 62, 75)
+            rsi_upper = trial.suggest_int("rsi_upper", 58, 70)
             rsi_lower = trial.suggest_int("rsi_lower", 30, 45)
-            max_sl = 0.016
         else:
-            rsi_upper = trial.suggest_int("rsi_upper", 55, 75)
-            rsi_lower = trial.suggest_int("rsi_lower", 25, 40)
-            max_sl = 0.018
+            rsi_upper = trial.suggest_int("rsi_upper", 55, 70)
+            rsi_lower = trial.suggest_int("rsi_lower", 30, 42)
 
         params = {
             "strategy_type": strategy_type,
@@ -111,8 +112,8 @@ class BayesianStrategyEngine:
             "rsi_period": trial.suggest_int("rsi_period", 7, 14),
             "rsi_lower": rsi_lower,
             "rsi_upper": rsi_upper,
-            "stop_loss_pct": trial.suggest_float("stop_loss_pct", 0.010, max_sl, step=0.002),
-            "take_profit_pct": trial.suggest_float("take_profit_pct", 0.025, 0.080, step=0.005),
+            "stop_loss_pct": trial.suggest_float("stop_loss_pct", 0.008, 0.020, step=0.002),
+            "take_profit_pct": trial.suggest_float("take_profit_pct", 0.015, 0.060, step=0.005),
         }
 
         portfolio = self.run_backtest(train_df, params)
@@ -120,8 +121,8 @@ class BayesianStrategyEngine:
         max_dd = abs(portfolio.max_drawdown())
         trades_count = portfolio.trades.count()
 
-        # Pelonggaran Syarat Minimum Trade: Minimal 2 Transaksi pada In-Sample
-        if trades_count < 2 or max_dd > 0.20 or np.isnan(sharpe):
+        # Pelonggaran Syarat Minimum Trade pada In-Sample (Minimal 3 transaksi)
+        if trades_count < 3 or max_dd > 0.25 or np.isnan(sharpe):
             return -999.0
 
         return sharpe
@@ -137,6 +138,11 @@ class BayesianStrategyEngine:
             direction="maximize", sampler=optuna.samplers.TPESampler()
         )
         study.optimize(lambda trial: self._objective(trial, train_df), n_trials=n_trials)
+
+        # Mencegah crash jika tidak ada trial yang memenuhi syarat
+        if study.best_value == -999.0 or len(study.best_trials) == 0:
+            print("❌ No valid strategy candidate found during Optimization.")
+            return None, False
 
         best_params = study.best_params
         best_in_sample_sharpe = study.best_value
@@ -155,8 +161,8 @@ class BayesianStrategyEngine:
             f"🧪 [OOS Validation] Type: {best_params['strategy_type']} | Direction: {best_params['direction']} | Sharpe: {val_sharpe:.2f} | WinRate: {win_rate_pct:.1f}% | Trades: {val_trades}"
         )
 
-        # Kriteria OOS Seimbang (Sharpe > 0.4 & Minimum 1 Trade)
-        if val_sharpe > 0.4 and val_trades >= 1:
+        # Kriteria OOS (Sharpe > 0.2, Win Rate > 50%, Min 2 Trades)
+        if val_sharpe > 0.2 and val_trades >= 2 and win_rate_pct >= 50.0:
             print("🏆 FUTURES STRATEGY WINNER VALIDATED! Saving parameters...")
             self._save_winner_config(best_params)
             return best_params, True
