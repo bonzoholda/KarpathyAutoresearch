@@ -1,4 +1,5 @@
-import time
+import sys
+import gc
 import requests
 import os
 import ccxt
@@ -28,19 +29,14 @@ TOP_10_PAIRS = [
 TIMEFRAME = '15m'
 CANDLE_LIMIT = 1000
 
-# Waktu Tunggu Dynamic
-IDLE_TIME_FULL_SLOTS = 3600   # 60 Menit jika 3 Slot penuh
-IDLE_TIME_SEARCH_SLOTS = 300  # 5 Menit jika masih ada slot kosong (Fast Hunt)
-
 EXECUTOR_URL = os.getenv("EXECUTOR_WEBHOOK_URL", "https://okx-trade-executor.up.railway.app/webhook/strategy-update")
 
 
 def get_executor_active_slots_count() -> int:
     """Mengecek jumlah slot aktif di Executor (Repo 2) via API GET /position"""
     try:
-        # Mengambil base URL dari EXECUTOR_URL
         base_url = EXECUTOR_URL.split("/webhook")[0]
-        res = requests.get(f"{base_url}/position", timeout=3)
+        res = requests.get(f"{base_url}/position", timeout=5)
         if res.status_code == 200:
             data = res.json()
             return data.get("active_slots_count", 0)
@@ -84,7 +80,7 @@ def scan_top_pairs_for_winner():
         print(f"📊 Market Price: ${latest_price:,.4f}")
 
         engine = BayesianStrategyEngine(df)
-        params, success = engine.heal_and_find_winner(n_trials=120)
+        params, success = engine.heal_and_find_winner(n_trials=100)
 
         if success and params:
             split_idx = int(len(df) * 0.7)
@@ -107,6 +103,10 @@ def scan_top_pairs_for_winner():
         else:
             print(f"❌ [{pair}] No valid strategy passed OOS Validation. Moving to next pair...\n")
 
+        # Pembersihan memori setiap selesai memindai 1 koin
+        del engine
+        gc.collect()
+
     if best_candidate_params and winning_pair and winning_engine:
         print("\n" + "🎉 " * 15)
         print(f"🏆 TOURNAMENT WINNER FOUND! Selected Pair: [{winning_pair}] (OOS Sharpe: {highest_oos_sharpe:.2f})")
@@ -119,50 +119,37 @@ def scan_top_pairs_for_winner():
         return None, False
 
 
-def main():
-    print("🚀 Starting Bayesian Autoresearch Engine (Dynamic Multi-Slot Scanner)...")
+def run_cron_job():
+    print("🚀 [CRON TRIGGERED] Starting Bayesian Autoresearch Engine...")
 
-    active_params = load_active_config()
+    # 1. Cek berapa slot yang sedang aktif di Executor (Repo 2)
+    active_slots = get_executor_active_slots_count()
+    print(f"📊 Current Active Trades in Executor: {active_slots}/3 Slots occupied.")
 
-    while True:
-        try:
-            # 1. Cek berapa slot yang sedang aktif di Executor (Repo 2)
-            active_slots = get_executor_active_slots_count()
-            print(f"\n📊 Current Active Trades in Executor: {active_slots}/3 Slots occupied.")
+    # 2. Jika slot di Executor penuh (3/3), lewati scanning untuk menghemat resources
+    if active_slots >= 3:
+        print("🔒 All 3 slots are occupied! Skipping scan for this cycle.")
+    else:
+        print(f"🎯 Available slots: {3 - active_slots} free. Executing tournament scan...")
+        new_params, success = scan_top_pairs_for_winner()
+        
+        if success and new_params:
+            print("\n🤖 [Research Engine] Winner Strategy Successfully Pushed:")
+            print(f"   -> Target Pair : {new_params.get('symbol', 'BTC/USDT')}")
+            print(f"   -> Direction   : {new_params.get('direction', 'LONG')} 🚀")
+            print(f"   -> RSI Period  : {new_params['rsi_period']}")
+            print(f"   -> Entry Target: RSI {new_params['rsi_lower']}")
 
-            # 2. Tentukan berapa lama harus idle setelah scanning
-            if active_slots >= 3:
-                current_sleep_time = IDLE_TIME_FULL_SLOTS
-                print(f"🔒 All 3 slots are occupied! Research engine will sleep for {IDLE_TIME_FULL_SLOTS // 60} minutes.")
-            else:
-                current_sleep_time = IDLE_TIME_SEARCH_SLOTS
-                print(f"🎯 Slots available ({3 - active_slots} slots free)! Running fast tournament scan (5-min retry cycle)...")
-
-                # Jalankan pencarian jika slot masih tersedia
-                new_params, success = scan_top_pairs_for_winner()
-                if success:
-                    active_params = new_params
-                    print("\n✅ Winner Strategy Hot-Reloaded to Executor!")
-
-            # Log status
-            if active_params:
-                print("\n🤖 [Research Engine] Latest Winner Strategy Pushed:")
-                print(f"   -> Target Pair : {active_params.get('symbol', 'BTC/USDT')}")
-                print(f"   -> Direction   : {active_params.get('direction', 'LONG')} 🚀")
-                print(f"   -> RSI Period  : {active_params['rsi_period']}")
-                print(f"   -> Entry Target: RSI {active_params['rsi_lower']}")
-
-            print(f"\n💤 Research Engine idling... Waiting {current_sleep_time // 60} minutes for next cycle.")
-            time.sleep(current_sleep_time)
-
-        except KeyboardInterrupt:
-            print("\n🛑 Research Engine stopped gracefully.")
-            break
-        except Exception as e:
-            print(f"❌ Error encountered in main loop: {e}")
-            print("⏳ Retrying in 30 seconds...")
-            time.sleep(30)
+    print("\n🏁 [CRON FINISHED] Tournament scan completed. Shutting down container...")
+    
+    # Garbage collection akhir sebelum container mati
+    gc.collect()
+    sys.exit(0)
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        run_cron_job()
+    except Exception as e:
+        print(f"❌ Critical Error in Cron Execution: {e}")
+        sys.exit(1)
