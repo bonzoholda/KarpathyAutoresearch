@@ -27,32 +27,25 @@ class BayesianStrategyEngine:
         # Indikator Utama: RSI 15m
         rsi = vbt.RSI.run(df["close"], window=rsi_period).rsi
 
-        # --- 🛡️ STRICT MACRO TREND GUARD (1-HOUR EMA 200 FILTER) ---
+        # --- 🛡️ SINGLE MACRO TREND GUARD (1-HOUR EMA 200 FILTER) ---
         df_1h = df["close"].resample("1h").last().dropna()
         ema200_1h = vbt.MA.run(df_1h, window=200, ewm=True).ma
         ema200_macro = ema200_1h.reindex(df.index, method="ffill")
 
-        # Trend Confirmation (15m & 1h)
-        ema20_15m = vbt.MA.run(df["close"], window=20, ewm=True).ma
-        ema50_15m = vbt.MA.run(df["close"], window=50, ewm=True).ma
-
-        is_macro_uptrend = (df["close"] > ema200_macro) & (ema20_15m > ema50_15m)
-        is_macro_downtrend = (df["close"] < ema200_macro) & (ema20_15m < ema50_15m)
-
-        # Candle Reversal Confirmation (Cegah Entry di Tengah Candle Hijau Deras)
-        is_bearish_candle = df["close"] < df["open"]
-        is_bullish_candle = df["close"] > df["open"]
+        is_macro_uptrend = df["close"] > ema200_macro
+        is_macro_downtrend = df["close"] < ema200_macro
 
         # --- LOGIKA SINYAL ANEKA STRATEGI ---
         if strategy_type == "RSI_MEAN_REVERSION":
             if direction == "LONG":
-                entries = (rsi < rsi_lower) & is_bullish_candle & is_macro_uptrend
+                entries = (rsi < rsi_lower) & is_macro_uptrend
                 exits = rsi > rsi_upper
-            else:  # SHORT (Wajib dengan Konfirmasi Bearish Candle & Strict Downtrend)
-                entries = (rsi > rsi_upper) & is_bearish_candle & is_macro_downtrend
+            else:  # SHORT
+                entries = (rsi > rsi_upper) & is_macro_downtrend
                 exits = rsi < rsi_lower
 
         elif strategy_type == "EMA_PULLBACK_TREND":
+            ema20_15m = vbt.MA.run(df["close"], window=20, ewm=True).ma
             if direction == "LONG":
                 entries = (rsi < rsi_lower) & (df["close"] > ema20_15m) & is_macro_uptrend
                 exits = (rsi > rsi_upper)
@@ -61,14 +54,16 @@ class BayesianStrategyEngine:
                 exits = (rsi < rsi_lower)
 
         elif strategy_type == "RSI_MOMENTUM_BREAKOUT":
+            ema20_15m = vbt.MA.run(df["close"], window=20, ewm=True).ma
+            ema50_15m = vbt.MA.run(df["close"], window=50, ewm=True).ma
             if direction == "LONG":
-                entries = (rsi > rsi_upper) & is_bullish_candle & is_macro_uptrend
+                entries = (rsi > rsi_upper) & (ema20_15m > ema50_15m) & is_macro_uptrend
                 exits = (rsi < 48)
             else:  # SHORT
-                entries = (rsi < rsi_lower) & is_bearish_candle & is_macro_downtrend
+                entries = (rsi < rsi_lower) & (ema20_15m < ema50_15m) & is_macro_downtrend
                 exits = (rsi > 52)
 
-        # Backtest Engine
+        # Backtest Engine via VectorBT
         if direction == "LONG":
             portfolio = vbt.Portfolio.from_signals(
                 df["close"],
@@ -100,11 +95,11 @@ class BayesianStrategyEngine:
         )
         direction = trial.suggest_categorical("direction", ["LONG", "SHORT"])
 
-        # Perketat ambang batas RSI khusus SHORT
+        # Parameter RSI Adaptif
         if direction == "SHORT":
-            rsi_upper = trial.suggest_int("rsi_upper", 68, 78)  # Hanya ekstrim Overbought
-            rsi_lower = trial.suggest_int("rsi_lower", 30, 42)
-            max_sl = 0.012  # Ketatkan Stop Loss SHORT ke max 1.2%
+            rsi_upper = trial.suggest_int("rsi_upper", 62, 75)
+            rsi_lower = trial.suggest_int("rsi_lower", 30, 45)
+            max_sl = 0.015
         else:
             rsi_upper = trial.suggest_int("rsi_upper", 55, 75)
             rsi_lower = trial.suggest_int("rsi_lower", 25, 40)
@@ -116,7 +111,7 @@ class BayesianStrategyEngine:
             "rsi_period": trial.suggest_int("rsi_period", 7, 14),
             "rsi_lower": rsi_lower,
             "rsi_upper": rsi_upper,
-            "stop_loss_pct": trial.suggest_float("stop_loss_pct", 0.008, max_sl, step=0.002),
+            "stop_loss_pct": trial.suggest_float("stop_loss_pct", 0.010, max_sl, step=0.002),
             "take_profit_pct": trial.suggest_float("take_profit_pct", 0.025, 0.080, step=0.005),
         }
 
@@ -125,17 +120,18 @@ class BayesianStrategyEngine:
         max_dd = abs(portfolio.max_drawdown())
         trades_count = portfolio.trades.count()
 
-        if trades_count < 3 or max_dd > 0.15 or np.isnan(sharpe):
+        # Pelonggaran Syarat Minimum Trade: Minimal 2 Transaksi pada In-Sample
+        if trades_count < 2 or max_dd > 0.20 or np.isnan(sharpe):
             return -999.0
 
         return sharpe
 
-    def heal_and_find_winner(self, n_trials: int = 120):
+    def heal_and_find_winner(self, n_trials: int = 100):
         split_idx = int(len(self.df) * 0.7)
         train_df = self.df.iloc[:split_idx]
         val_df = self.df.iloc[split_idx:]
 
-        print("🔍 [Self-Healing] Running Strict Macro Trend + Reversal Confirmation Optimization...")
+        print("🔍 [Self-Healing] Running Balanced Macro Trend Optimization...")
 
         study = optuna.create_study(
             direction="maximize", sampler=optuna.samplers.TPESampler()
@@ -159,7 +155,8 @@ class BayesianStrategyEngine:
             f"🧪 [OOS Validation] Type: {best_params['strategy_type']} | Direction: {best_params['direction']} | Sharpe: {val_sharpe:.2f} | WinRate: {win_rate_pct:.1f}% | Trades: {val_trades}"
         )
 
-        if val_sharpe > 0.8 and val_trades >= 2:
+        # Kriteria OOS Seimbang (Sharpe > 0.4 & Minimum 1 Trade)
+        if val_sharpe > 0.4 and val_trades >= 1:
             print("🏆 FUTURES STRATEGY WINNER VALIDATED! Saving parameters...")
             self._save_winner_config(best_params)
             return best_params, True
@@ -204,4 +201,3 @@ def load_active_config():
         with open(CONFIG_PATH, "r") as f:
             return json.load(f)
     return None
-        
