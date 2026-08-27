@@ -1,3 +1,6 @@
+import matplotlib
+matplotlib.use('Agg')  # Force Matplotlib ke mode Headless Non-GUI untuk Railway Container
+
 import json
 import os
 import requests
@@ -40,7 +43,7 @@ class BayesianStrategyEngine:
         ema20_15m = vbt.MA.run(df["close"], window=20, ewm=True).ma
         ema50_15m = vbt.MA.run(df["close"], window=50, ewm=True).ma
 
-        # --- LOGIKA SINYAL ANEKA STRATEGI (DIPERBAIKI) ---
+        # --- LOGIKA SINYAL ANEKA STRATEGI ---
         if strategy_type == "RSI_MEAN_REVERSION":
             if direction == "LONG":
                 entries = (rsi < rsi_lower) & is_macro_uptrend
@@ -50,7 +53,6 @@ class BayesianStrategyEngine:
                 exits = rsi < rsi_lower
 
         elif strategy_type == "EMA_PULLBACK_TREND":
-            # Perbaikan: Pullback terjadi ketika EMA20 > EMA50 (Tren Naik) & RSI Mengalami Dip/Oversold
             if direction == "LONG":
                 entries = (rsi < rsi_lower) & (ema20_15m > ema50_15m) & is_macro_uptrend
                 exits = (rsi > rsi_upper)
@@ -98,7 +100,7 @@ class BayesianStrategyEngine:
         )
         direction = trial.suggest_categorical("direction", ["LONG", "SHORT"])
 
-        # Range RSI dibuat lebih elastis agar frekuensi sinyal meningkat
+        # Range RSI elastis
         if direction == "SHORT":
             rsi_upper = trial.suggest_int("rsi_upper", 58, 70)
             rsi_lower = trial.suggest_int("rsi_lower", 30, 45)
@@ -121,7 +123,6 @@ class BayesianStrategyEngine:
         max_dd = abs(portfolio.max_drawdown())
         trades_count = portfolio.trades.count()
 
-        # Pelonggaran Syarat Minimum Trade pada In-Sample (Minimal 3 transaksi)
         if trades_count < 3 or max_dd > 0.25 or np.isnan(sharpe):
             return -999.0
 
@@ -139,7 +140,6 @@ class BayesianStrategyEngine:
         )
         study.optimize(lambda trial: self._objective(trial, train_df), n_trials=n_trials)
 
-        # Mencegah crash jika tidak ada trial yang memenuhi syarat
         if study.best_value == -999.0 or len(study.best_trials) == 0:
             print("❌ No valid strategy candidate found during Optimization.")
             return None, False
@@ -161,7 +161,6 @@ class BayesianStrategyEngine:
             f"🧪 [OOS Validation] Type: {best_params['strategy_type']} | Direction: {best_params['direction']} | Sharpe: {val_sharpe:.2f} | WinRate: {win_rate_pct:.1f}% | Trades: {val_trades}"
         )
 
-        # Kriteria OOS (Sharpe > 0.2, Win Rate > 50%, Min 2 Trades)
         if val_sharpe > 0.2 and val_trades >= 2 and win_rate_pct >= 50.0:
             print("🏆 FUTURES STRATEGY WINNER VALIDATED! Saving parameters...")
             self._save_winner_config(best_params)
@@ -171,35 +170,14 @@ class BayesianStrategyEngine:
             return None, False
 
     def _save_winner_config(self, params: dict):
-        os.makedirs("config", exist_ok=True)
-        with open(CONFIG_PATH, "w") as f:
-            json.dump(params, f, indent=4)
-
-        EXECUTOR_URL = os.getenv(
-            "EXECUTOR_WEBHOOK_URL",
-            "https://okx-trade-executor.up.railway.app/webhook/strategy-update",
-        )
-        WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "my_secret_token_123")
-
-        payload = {
-            "symbol": str(params.get("symbol", "BTC/USDT")),
-            "direction": str(params.get("direction", "LONG")),
-            "rsi_period": int(params["rsi_period"]),
-            "rsi_lower": float(params["rsi_lower"]),
-            "rsi_upper": float(params["rsi_upper"]),
-            "stop_loss_pct": float(params["stop_loss_pct"]),
-            "take_profit_pct": float(params["take_profit_pct"]),
-        }
-
+        """Menyimpan hasil konfigurasi pemenang ke file JSON lokal"""
         try:
-            headers = {"Authorization": f"Bearer {WEBHOOK_SECRET}"}
-            response = requests.post(EXECUTOR_URL, json=payload, headers=headers, timeout=5)
-            if response.status_code == 200:
-                print("🚀 Successfully pushed Futures Winner Strategy to OKX Executor!")
-            else:
-                print(f"⚠️ Webhook response error [{response.status_code}]: {response.text}")
+            os.makedirs("config", exist_ok=True)
+            with open(CONFIG_PATH, "w") as f:
+                json.dump(params, f, indent=4)
+            print("💾 Winner config successfully saved to local JSON file.")
         except Exception as e:
-            print(f"⚠️ Failed to send webhook to Executor: {e}")
+            print(f"⚠️ Failed to save winner config JSON: {e}")
 
 
 def load_active_config():
