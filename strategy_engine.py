@@ -1,13 +1,22 @@
 import matplotlib
-matplotlib.use('Agg')  # Force Matplotlib ke mode Headless Non-GUI untuk Railway Container
+matplotlib.use('Agg')  # Headless mode
 
 import json
 import os
 import requests
 import numpy as np
 import pandas as pd
-import vectorbt as vbt
 import optuna
+
+# --- 🚀 MONKEY-PATCH UNTUK CRASH PLOTLY / VECTORBT ---
+import plotly.graph_objs as go
+if not hasattr(go.layout.template.Data, "scattermapbox"):
+    # Inject atribut dummy agar vectorbt reset_theme() tidak melempar ValueError
+    setattr(go.layout.template.Data, "scattermapbox", go.layout.template.Data.scatter)
+# ---------------------------------------------------
+
+import vectorbt as vbt  # Aman di-import sekarang
+
 
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 CONFIG_PATH = os.path.join("config", "strategy_config.json")
