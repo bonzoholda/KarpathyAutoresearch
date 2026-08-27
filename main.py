@@ -33,7 +33,7 @@ TIMEFRAME = '15m'
 CANDLE_LIMIT = 1000
 
 # Fallback disesuaikan ke endpoint Go Engine (/webhook/strategy)
-EXECUTOR_URL = os.getenv("EXECUTOR_WEBHOOK_URL", "https://tethgard-executor-go.up.railway.app/webhook/strategy")
+EXECUTOR_URL = os.getenv("EXECUTOR_WEBHOOK_URL", "https://tethgard.up.railway.app/webhook/strategy")
 
 
 def get_executor_active_slots_count() -> int:
