@@ -29,7 +29,8 @@ TOP_10_PAIRS = [
 TIMEFRAME = '15m'
 CANDLE_LIMIT = 1000
 
-EXECUTOR_URL = os.getenv("EXECUTOR_WEBHOOK_URL", "https://okx-trade-executor.up.railway.app/webhook/strategy-update")
+# Fallback disesuaikan ke endpoint Go Engine (/webhook/strategy)
+EXECUTOR_URL = os.getenv("EXECUTOR_WEBHOOK_URL", "https://tethgard-executor-go.up.railway.app/webhook/strategy")
 
 
 def get_executor_active_slots_count() -> int:
@@ -43,6 +44,34 @@ def get_executor_active_slots_count() -> int:
     except Exception as e:
         print(f"⚠️ Could not check Executor slots status: {e}")
     return 0
+
+
+def push_winning_strategy_to_executor(params: dict) -> bool:
+    """Mengirim data winning strategy hasil Optuna ke Go Engine PostgreSQL (active_strategies)"""
+    try:
+        # Bersihkan symbol (misal 'BTC/USDT' -> 'BTCUSDT')
+        raw_symbol = params.get('symbol', 'BTC/USDT')
+        formatted_symbol = raw_symbol.replace("/", "")
+
+        payload = {
+            "symbol": formatted_symbol,
+            "direction": str(params.get('direction', 'LONG')),
+            "leverage": f"{params.get('leverage', 3)}x",  # Mengirim string "3x"
+            "rsi_lower": float(params.get('rsi_lower', 30.0)),
+            "rsi_upper": float(params.get('rsi_upper', 70.0))
+        }
+
+        print(f"📡 Pushing strategy to Go Engine: {payload}")
+        res = requests.post(EXECUTOR_URL, json=payload, timeout=5)
+        
+        if res.status_code == 200:
+            print("✅ Strategy successfully registered and saved to PostgreSQL 'active_strategies'!")
+            return True
+        else:
+            print(f"⚠️ Failed to push strategy. HTTP Status: {res.status_code}, Response: {res.text}")
+    except Exception as e:
+        print(f"❌ Error pushing winning strategy to Go Engine: {e}")
+    return False
 
 
 def fetch_live_market_data(symbol: str, timeframe: str = TIMEFRAME, limit: int = CANDLE_LIMIT) -> pd.DataFrame:
@@ -134,11 +163,14 @@ def run_cron_job():
         new_params, success = scan_top_pairs_for_winner()
         
         if success and new_params:
-            print("\n🤖 [Research Engine] Winner Strategy Successfully Pushed:")
+            print("\n🤖 [Research Engine] Winner Strategy Successfully Found:")
             print(f"   -> Target Pair : {new_params.get('symbol', 'BTC/USDT')}")
             print(f"   -> Direction   : {new_params.get('direction', 'LONG')} 🚀")
-            print(f"   -> RSI Period  : {new_params['rsi_period']}")
-            print(f"   -> Entry Target: RSI {new_params['rsi_lower']}")
+            print(f"   -> RSI Period  : {new_params.get('rsi_period', 14)}")
+            print(f"   -> Entry Target: RSI {new_params.get('rsi_lower', 30)}")
+
+            # OTO-PUSH: Kirim otomatis ke Go Engine & PostgreSQL
+            push_winning_strategy_to_executor(new_params)
 
     print("\n🏁 [CRON FINISHED] Tournament scan completed. Shutting down container...")
     
