@@ -1,3 +1,6 @@
+import matplotlib
+matplotlib.use('Agg')  # Mencegah Matplotlib mencoba membuka window GUI
+
 import sys
 import gc
 import requests
