@@ -63,10 +63,3 @@ Jalankan eksperimen secara berulang tanpa henti (LOOP FOREVER):
  * ULANGI DARI STEP 1. JANGAN PERNAH BERHENTI ATAU MEMINTA KONFIRMASI MANUSIA.
 
 ---
-
-### **Perubahan Utama yang Diterapkan pada File di Atas:**
-1. **Target Metrik:** Mengubah target evaluasi dari `val_bpb` (pretraining LLM) menjadi `sharpe_score` (Trading Engine)[span_1](start_span)[span_1](end_span).
-2. **File Scope:** Mengisolasi `strategy_candidate.py` sebagai satu-satunya file yang diizinkan untuk dimodifikasi oleh AI Agent[span_2](start_span)[span_2](end_span).
-3. **Execution Command:** Mengubah *execution harness* dari `uv run train.py` menjadi `python evaluator.py`[span_3](start_span)[span_3](end_span).
-4. **Kriteria Keep/Discard:** AI akan menyimpan (*keep*) strategi jika menghasilkan Sharpe Ratio lebih tinggi tanpa melanggar batasan *Max Drawdown*[span_4](start_span)[span_4](end_span).
-
