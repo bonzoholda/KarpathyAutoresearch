@@ -1,5 +1,5 @@
 # --------------------------------------------------------------
-# strategy_engine.py - Production-Ready Backtesting Engine
+# strategy_engine_new.py - Production-Ready Backtesting Engine
 #   * Fixed look-ahead bias (shift data 1 bar)
 #   * Realistic cost model (fees + slippage + funding)
 #   * Walk-Forward with embargo (no leakage)
@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 import optuna
 from sklearn.model_selection import TimeSeriesSplit
+import requests
 
 import matplotlib
 matplotlib.use('Agg')
@@ -28,28 +29,34 @@ CONFIG_PATH = os.path.join("config", "strategy_config.json")
 TOTAL_COST_BPS = float(os.environ.get("TOTAL_COST_BPS", 0.0010))  # Default 10 bps per side
 
 def _apply_shift(df):
+    """Shift data 1 bar to avoid look-ahead bias."""
     df = df.copy()
     for col in ["open", "high", "low", "close", "volume"]:
         df[col] = df[col].shift(1)
     return df
 
 def _estimate_cost(fees_bps):
+    """Return the fee structure in the format expected by VectorBT."""
     return fees_bps
 
 def compute_adx(high, low, close, period=14):
+    """
+    Compute Average Directional Index (ADX) using Wilder's smoothing.
+    Returns a pandas Series aligned with the index of `high`.
+    """
     # True Range
     tr1 = high - low
     tr2 = (high - close.shift()).abs()
     tr3 = (low - close.shift()).abs()
     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-    
+
     # Directional Movement
     up = high - high.shift()
     down = low.shift() - low
     plus_dm = np.where((up > down) & (up > 0), up, 0.0)
     minus_dm = np.where((down > up) & (down > 0), down, 0.0)
-    
-    # Smoothed with EMA
+
+    # Smoothed with EMA (Wilder's style approximation)
     atr = tr.ewm(alpha=1/period, adjust=False).mean()
     plus_di = pd.Series(plus_dm, index=high.index).ewm(alpha=1/period, adjust=False).mean() / atr * 100
     minus_di = pd.Series(minus_dm, index=high.index).ewm(alpha=1/period, adjust=False).mean() / atr * 100
@@ -62,15 +69,21 @@ class BayesianStrategyEngine:
     def __init__(self, df: pd.DataFrame):
         self.raw_df = df
         self.df = _apply_shift(df)
+        self.last_oos_sharpe = None          # Store the latest OOS Sharpe for logging
+        self.last_pair = None                # Pair name for push operations
 
     @staticmethod
     def run_backtest(df: pd.DataFrame, params: dict):
+        """
+        Execute a single backtest using VectorBT based on the supplied parameters.
+        Returns a VectorBT Portfolio object.
+        """
         strategy_type = params.get("strategy_type", "RSI_MEAN_REVERSION")
         direction = params["direction"]
         sl_stop = float(params["stop_loss_pct"])
         tp_stop = float(params["take_profit_pct"])
 
-        # Fallback strategy: MA Crossover
+        # ---------- Fallback Strategy: Simple MA Crossover ----------
         if strategy_type == "MA_CROSSOVER":
             ema_fast = int(params["ema_fast"])
             ema_slow = int(params["ema_slow"])
@@ -97,7 +110,7 @@ class BayesianStrategyEngine:
                 )
             return portfolio
 
-        # Original strategies
+        # ---------- Original Strategies ----------
         rsi_period = int(params["rsi_period"])
         rsi_lower = float(params["rsi_lower"])
         rsi_upper = float(params["rsi_upper"])
@@ -107,8 +120,9 @@ class BayesianStrategyEngine:
         adx = adx_series
 
         # Relaxed regime filters
-        is_trend_regime = adx > 20  # lowered from 25
+        is_trend_regime = adx > 20   # lowered from 25
         is_choppy_regime = adx < 30  # widened from 20
+
         ema_macro = vbt.MA.run(df["close"], window=800, ewm=True).ma
         if ema_macro.dropna().empty:
             ema_macro = vbt.MA.run(df["close"], window=200, ewm=True).ma
@@ -123,6 +137,7 @@ class BayesianStrategyEngine:
             else:
                 entries = (rsi > rsi_upper) & is_choppy_regime
                 exits = rsi < rsi_lower
+
         elif strategy_type == "EMA_PULLBACK_TREND":
             if direction == "LONG":
                 entries = (rsi < rsi_lower) & (ema20 > ema50) & is_trend_regime
@@ -130,6 +145,7 @@ class BayesianStrategyEngine:
             else:
                 entries = (rsi > rsi_upper) & (ema20 < ema50) & is_trend_regime
                 exits = rsi < rsi_lower
+
         elif strategy_type == "RSI_MOMENTUM_BREAKOUT":
             if direction == "LONG":
                 entries = (rsi > rsi_upper) & (ema20 > ema50) & is_trend_regime
@@ -140,6 +156,7 @@ class BayesianStrategyEngine:
         else:
             raise ValueError(f"Unknown strategy_type: {strategy_type}")
 
+        # Build Portfolio based on direction
         if direction == "LONG":
             portfolio = vbt.Portfolio.from_signals(
                 df["close"], entries=entries, exits=exits,
@@ -157,12 +174,17 @@ class BayesianStrategyEngine:
         return portfolio
 
     def _objective(self, trial, train_df):
+        """
+        Optuna objective function – maximises Sharpe Ratio while penalising
+        overly complex parameter sets and invalid backtests.
+        """
         strategy_type = trial.suggest_categorical(
             "strategy_type",
             ["RSI_MEAN_REVERSION", "EMA_PULLBACK_TREND", "RSI_MOMENTUM_BREAKOUT"],
         )
         direction = trial.suggest_categorical("direction", ["LONG", "SHORT"])
 
+        # Elastic RSI bounds – keep search space reasonable
         if direction == "SHORT":
             rsi_upper = trial.suggest_int("rsi_upper", 55, 70)
             rsi_lower = trial.suggest_int("rsi_lower", 30, 45)
@@ -188,13 +210,60 @@ class BayesianStrategyEngine:
         max_dd = abs(portfolio.max_drawdown())
         trades_cnt = portfolio.trades.count()
 
-        # Strict penalty for invalid trials
+        # Penalise unrealistic or empty results
         if trades_cnt < 2 or max_dd > 0.30 or np.isnan(sharpe) or np.isinf(sharpe):
             return -999.0
 
         return sharpe - complexity_penalty
 
-    def heal_and_find_winner(self, n_trials=200):
+    def push_strategy_to_executor(self, pair: str, params: dict, oos_sharpe: float) -> bool:
+        """
+        Dispatch the validated strategy to the executor service via an HTTP POST.
+        Returns True on success, False otherwise.
+        """
+        executor_url = os.environ.get(
+            "EXECUTOR_URL", "http://localhost:8000/executor/strategy"
+        )
+        payload = {
+            "pair": pair,
+            "strategy_type": params.get("strategy_type", "RSI_MEAN_REVERSION"),
+            "direction": params.get("direction", "LONG"),
+            "rsi_period": int(params.get("rsi_period", 14)),
+            "rsi_lower": float(params.get("rsi_lower", 30)),
+            "rsi_upper": float(params.get("rsi_upper", 70)),
+            "stop_loss_pct": float(params.get("stop_loss_pct", 0.015)),
+            "take_profit_pct": float(params.get("take_profit_pct", 0.030)),
+            "oos_sharpe": float(oos_sharpe),
+            "timestamp": pd.Timestamp.now().isoformat(),
+        }
+
+        try:
+            resp = requests.post(
+                executor_url,
+                json=payload,
+                timeout=10,
+                headers={"Content-Type": "application/json"},
+            )
+            if resp.status_code == 200:
+                print(f"✅ [Executor] Strategy for {pair} pushed successfully.")
+                return True
+            print(
+                f"⚠️ [Executor] Push for {pair} failed (HTTP {resp.status_code}): {resp.text}"
+            )
+            return False
+        except Exception as e:
+            print(f"❌ [Executor] Failed to push {pair}: {e}")
+            return False
+
+    def heal_and_find_winner(self, n_trials=200, pair=None):
+        """
+        Run a walk‑forward optimisation, select the median‑Sharpe candidate,
+        save it locally and (if a pair is supplied) push it to the executor.
+        Returns a tuple (best_params, success_flag).
+        """
+        if pair:
+            self.last_pair = pair
+
         print("[Self-Healing] Running Balanced Macro Trend Optimization...")
 
         tscv = TimeSeriesSplit(n_splits=5, gap=96, test_size=None)
@@ -223,7 +292,7 @@ class BayesianStrategyEngine:
             oos_trades = val_portfolio.trades.count()
             oos_winrate = val_portfolio.trades.win_rate() or 0.0
 
-            # Relaxed criteria: at least 2 trades, Sharpe >0.5
+            # Relaxed acceptance criteria
             if (
                 oos_trades >= 2
                 and oos_dd <= 0.30
@@ -252,7 +321,7 @@ class BayesianStrategyEngine:
                     f"Trades={oos_trades} | DD={oos_dd*100:.1f}%"
                 )
 
-        # Require at least 2 folds (relaxed from 3)
+        # ---------- Decide final strategy ----------
         if len(oos_metrics) >= 2:
             sorted_metrics = sorted(oos_metrics, key=lambda x: x["sharpe"])
             median_idx = len(sorted_metrics) // 2
@@ -267,6 +336,19 @@ class BayesianStrategyEngine:
 
             best_params = all_params[median_idx]
             self._save_winner_config(best_params)
+
+            # Store OOS Sharpe for later logging
+            self.last_oos_sharpe = chosen["sharpe"]
+
+            # If a pair was supplied, push the strategy to the executor
+            if self.last_pair:
+                if self.push_strategy_to_executor(self.last_pair, best_params, self.last_oos_sharpe):
+                    print(
+                        f"🎯 [{self.last_pair}] Valid Candidate | "
+                        f"OOS Sharpe Ratio: {self.last_oos_sharpe:.2f}"
+                    )
+                else:
+                    print(f"⚠️ [{self.last_pair}] Strategy saved locally but push to executor failed.")
             return best_params, True
         else:
             # Fallback to simple MA Crossover
@@ -274,7 +356,7 @@ class BayesianStrategyEngine:
             fallback_params = {
                 "strategy_type": "MA_CROSSOVER",
                 "direction": "LONG",
-                "rsi_period": 14,  # not used but kept for compatibility
+                "rsi_period": 14,
                 "rsi_lower": 30,
                 "rsi_upper": 70,
                 "stop_loss_pct": 0.02,
@@ -285,7 +367,8 @@ class BayesianStrategyEngine:
             self._save_winner_config(fallback_params)
             return fallback_params, False
 
-    def _save_winner_config(self, params):
+    def _save_winner_config(self, params: dict):
+        """Persist the chosen parameters to the config directory."""
         try:
             os.makedirs("config", exist_ok=True)
             with open(CONFIG_PATH, "w") as f:
@@ -295,18 +378,23 @@ class BayesianStrategyEngine:
             print(f"Failed to save winner config JSON: {e}")
 
 def load_active_config():
+    """Load the most recently saved strategy configuration."""
     if os.path.exists(CONFIG_PATH):
         with open(CONFIG_PATH, "r") as f:
             return json.load(f)
     return None
 
 if __name__ == "__main__":
+    # Example orchestrator – in production this would iterate over all tradable pairs
+    # and read pair‑specific data files.
     df = pd.read_csv("market_data.csv")
     df["timestamp"] = pd.to_datetime(df["timestamp"])
     df.set_index("timestamp", inplace=True)
 
     engine = BayesianStrategyEngine(df)
-    best_params, success = engine.heal_and_find_winner(n_trials=200)
+
+    # For demo we hardcode a pair; real code will loop over pairs.
+    best_params, success = engine.heal_and_find_winner(n_trials=200, pair="BTC/USDT")
 
     if success:
         print("\nPRODUCTION READY - best_params saved:")
