@@ -5,8 +5,11 @@ scipy>=1.7
 matplotlib>=3.4
 plotly>=5.0
 
-# Back‑testing library (open‑source)
+# Back-testing library (open-source)
 vectorbt>=0.7
 
-# Walk‑forward / time‑series split utilities
+# Walk-forward / time-series split utilities
 scikit-learn>=1.0
+
+# Exchange API library (diperlukan oleh main.py)
+ccxt>=1.0.0
