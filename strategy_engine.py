@@ -1,5 +1,5 @@
 # --------------------------------------------------------------
-# strategy_engine_new.py - Production-Ready Backtesting Engine
+# strategy_engine.py - Production-Ready Backtesting Engine
 # --------------------------------------------------------------
 import json
 import os
@@ -15,7 +15,7 @@ matplotlib.use('Agg')
 
 import vectorbt as vbt
 
-# 💡 FIX 1: Ubah verbosity Optuna ke INFO agar detail pencarian muncul di terminal
+# 💡 Optuna Logging ke INFO agar pergerakan trial & hasil analisis tampil di konsol
 optuna.logging.set_verbosity(optuna.logging.INFO)
 
 # Config - Cost can be overridden via environment variable
@@ -185,6 +185,39 @@ class BayesianStrategyEngine:
 
         return sharpe - complexity_penalty
 
+    def push_strategy_to_executor(self, pair: str, params: dict, oos_sharpe: float) -> bool:
+        raw_symbol = pair.replace("/", "")
+        
+        payload = {
+            "symbol": raw_symbol,
+            "direction": str(params.get("direction", "LONG")),
+            "leverage": f"{params.get('leverage', 3)}x",
+            "rsi_lower": float(params.get("rsi_lower", 30.0)),
+            "rsi_upper": float(params.get("rsi_upper", 70.0))
+        }
+
+        executor_url = os.environ.get(
+            "EXECUTOR_WEBHOOK_URL", "https://tethgard.up.railway.app/webhook/strategy"
+        )
+
+        try:
+            resp = requests.post(
+                executor_url,
+                json=payload,
+                timeout=10,
+                headers={"Content-Type": "application/json"},
+            )
+            if resp.status_code == 200:
+                print(f"✅ [Executor] Strategy for {pair} pushed successfully.")
+                return True
+            print(
+                f"⚠️ [Executor] Push for {pair} failed (HTTP {resp.status_code}): {resp.text}"
+            )
+            return False
+        except Exception as e:
+            print(f"❌ [Executor] Failed to push {pair}: {e}")
+            return False
+
     def heal_and_find_winner(self, n_trials=200, pair=None):
         if pair:
             self.last_pair = pair
@@ -217,7 +250,6 @@ class BayesianStrategyEngine:
             oos_trades = val_portfolio.trades.count()
             oos_winrate = val_portfolio.trades.win_rate() or 0.0
 
-            # 💡 FIX 2: Syarat penerimaan OOS sedikit dilonggarkan agar fold tidak mudah terbuang
             if (
                 oos_trades >= 1
                 and oos_dd <= 0.35
@@ -245,7 +277,7 @@ class BayesianStrategyEngine:
                 )
 
         # ---------- Decide final strategy ----------
-        if len(oos_metrics) >= 1:  # Jika minimal 1 fold lolos
+        if len(oos_metrics) >= 1:
             sorted_metrics = sorted(oos_metrics, key=lambda x: x["sharpe"])
             median_idx = len(sorted_metrics) // 2
             chosen = sorted_metrics[median_idx]
@@ -289,3 +321,27 @@ class BayesianStrategyEngine:
             print("💾 Winner config successfully saved to config/strategy_config.json")
         except Exception as e:
             print(f"❌ Failed to save winner config JSON: {e}")
+
+# 💡 FUNGSI WAJIB UNTUK IMPORT main.py
+def load_active_config():
+    """Load the most recently saved strategy configuration."""
+    if os.path.exists(CONFIG_PATH):
+        with open(CONFIG_PATH, "r") as f:
+            return json.load(f)
+    return None
+
+if __name__ == "__main__":
+    if os.path.exists("market_data.csv"):
+        df = pd.read_csv("market_data.csv")
+        df["timestamp"] = pd.to_datetime(df["timestamp"])
+        df.set_index("timestamp", inplace=True)
+
+        engine = BayesianStrategyEngine(df)
+        best_params, success = engine.heal_and_find_winner(n_trials=200, pair="BTC/USDT")
+
+        if success:
+            print("\nPRODUCTION READY - best_params saved:")
+            print(json.dumps(best_params, indent=2))
+        else:
+            print("\nUsing fallback strategy (MA Crossover) - best_params saved:")
+            print(json.dumps(best_params, indent=2))
