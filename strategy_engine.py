@@ -29,7 +29,7 @@ if not hasattr(go.layout.template.Data, "scattermapbox"):
     setattr(go.layout.template.Data, "scattermapbox", go.layout.template.Data.scatter)
 # ----------------------------------------------------------------------------------------------------
 
-import vectorbtpro as vbt   # If using open-source vectorbt, change to: import vectorbt as vbt
+import vectorbt as vbt   # If using open-source vectorbt, change to: import vectorbt as vbt
 
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
