@@ -30,6 +30,7 @@ if not hasattr(go.layout.template.Data, "scattermapbox"):
 # ----------------------------------------------------------------------------------------------------
 
 import vectorbt as vbt   # If using open-source vectorbt, change to: import vectorbt as vbt
+import pandas_ta as ta
 
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
@@ -94,7 +95,8 @@ class BayesianStrategyEngine:
         rsi = vbt.RSI.run(df["close"], window=rsi_period).rsi
 
         # ADX for robust regime detection (primary) + EMA for secondary slow trend
-        adx = vbt.ADX.run(df["high"], df["low"], df["close"], window=14).adx
+        adx_series = ta.adx(df["high"], df["low"], df["close"], length=14)
+        adx = adx_series["ADX_14"]
 
         # Trend / Choppy regimes based on ADX (classic thresholds)
         is_trend_regime = adx > 25
