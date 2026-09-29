@@ -32,18 +32,27 @@ TOP_10_PAIRS = [
 TIMEFRAME = '15m'
 CANDLE_LIMIT = 1000
 
-# Fallback disesuaikan ke endpoint Go Engine (/webhook/strategy)
-EXECUTOR_URL = os.getenv("EXECUTOR_WEBHOOK_URL", "https://tethgard.up.railway.app/webhook/strategy")
+# URL Webhook Produksi Go Engine (Dapat di-override via Environment Variable EXECUTOR_WEBHOOK_URL)
+DEFAULT_WEBHOOK_URL = "https://tethgard-multi-go-production.up.railway.app/webhook/strategy"
+RAW_EXECUTOR_URL = os.getenv("EXECUTOR_WEBHOOK_URL", DEFAULT_WEBHOOK_URL)
+EXECUTOR_URL = RAW_EXECUTOR_URL.strip().rstrip('/')
 
 
 def get_executor_active_slots_count() -> int:
-    """Mengecek jumlah slot aktif di Executor (Repo 2) via API GET /position"""
+    """Mengecek jumlah slot aktif di Executor via API GET /position"""
     try:
-        base_url = EXECUTOR_URL.split("/webhook")[0]
+        # Mengambil base URL domain (tanpa path /webhook/strategy)
+        if "/webhook" in EXECUTOR_URL:
+            base_url = EXECUTOR_URL.split("/webhook")[0]
+        else:
+            base_url = EXECUTOR_URL
+
         res = requests.get(f"{base_url}/position", timeout=5)
         if res.status_code == 200:
             data = res.json()
             return data.get("active_slots_count", 0)
+        else:
+            print(f"⚠️ Executor /position returned status HTTP {res.status_code}")
     except Exception as e:
         print(f"⚠️ Could not check Executor slots status: {e}")
     return 0
@@ -52,20 +61,22 @@ def get_executor_active_slots_count() -> int:
 def push_winning_strategy_to_executor(params: dict) -> bool:
     """Mengirim data winning strategy hasil Optuna ke Go Engine PostgreSQL (active_strategies)"""
     try:
-        # Bersihkan symbol (misal 'BTC/USDT' -> 'BTCUSDT')
         raw_symbol = params.get('symbol', 'BTC/USDT')
         formatted_symbol = raw_symbol.replace("/", "")
 
         payload = {
             "symbol": formatted_symbol,
             "direction": str(params.get('direction', 'LONG')),
-            "leverage": f"{params.get('leverage', 3)}x",  # Mengirim string "3x"
+            "leverage": f"{params.get('leverage', 3)}x",
             "rsi_lower": float(params.get('rsi_lower', 30.0)),
             "rsi_upper": float(params.get('rsi_upper', 70.0))
         }
 
-        print(f"📡 Pushing strategy to Go Engine: {payload}")
-        res = requests.post(EXECUTOR_URL, json=payload, timeout=5)
+        print(f"📡 Target Endpoint: {EXECUTOR_URL}")
+        print(f"📡 Pushing strategy payload to Go Engine: {payload}")
+        
+        headers = {"Content-Type": "application/json"}
+        res = requests.post(EXECUTOR_URL, json=payload, headers=headers, timeout=10)
         
         if res.status_code == 200:
             print("✅ Strategy successfully registered and saved to PostgreSQL 'active_strategies'!")
@@ -112,7 +123,7 @@ def scan_top_pairs_for_winner():
         print(f"📊 Market Price: ${latest_price:,.4f}")
 
         engine = BayesianStrategyEngine(df)
-        params, success = engine.heal_and_find_winner(n_trials=100)
+        params, success = engine.heal_and_find_winner(n_trials=100, pair=pair)
 
         if success and params:
             split_idx = int(len(df) * 0.7)
@@ -135,7 +146,6 @@ def scan_top_pairs_for_winner():
         else:
             print(f"❌ [{pair}] No valid strategy passed OOS Validation. Moving to next pair...\n")
 
-        # Pembersihan memori setiap selesai memindai 1 koin
         del engine
         gc.collect()
 
@@ -154,11 +164,9 @@ def scan_top_pairs_for_winner():
 def run_cron_job():
     print("🚀 [CRON TRIGGERED] Starting Bayesian Autoresearch Engine...")
 
-    # 1. Cek berapa slot yang sedang aktif di Executor (Repo 2)
     active_slots = get_executor_active_slots_count()
     print(f"📊 Current Active Trades in Executor: {active_slots}/3 Slots occupied.")
 
-    # 2. Jika slot di Executor penuh (3/3), lewati scanning untuk menghemat resources
     if active_slots >= 3:
         print("🔒 All 3 slots are occupied! Skipping scan for this cycle.")
     else:
@@ -172,12 +180,9 @@ def run_cron_job():
             print(f"   -> RSI Period  : {new_params.get('rsi_period', 14)}")
             print(f"   -> Entry Target: RSI {new_params.get('rsi_lower', 30)}")
 
-            # OTO-PUSH: Kirim otomatis ke Go Engine & PostgreSQL
             push_winning_strategy_to_executor(new_params)
 
     print("\n🏁 [CRON FINISHED] Tournament scan completed. Shutting down container...")
-    
-    # Garbage collection akhir sebelum container mati
     gc.collect()
     sys.exit(0)
 
