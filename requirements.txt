@@ -7,3 +7,4 @@ numpy
 requests
 matplotlib
 scikit-learn>=1.0
+pandas_ta>=0.3.14b
