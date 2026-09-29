@@ -7,6 +7,7 @@
 #   * Reduced hyper-parameter search space + complexity penalty
 #   * Relaxed OOS thresholds (Sharpe >=0.5, winrate >=0.5, trades >=2)
 #   * Fallback to MA Crossover if no strategy found
+#   * Payload format compatible with main.py / Go Engine webhook
 #   * Same CLI / config format as original
 # --------------------------------------------------------------
 import json
@@ -219,23 +220,24 @@ class BayesianStrategyEngine:
     def push_strategy_to_executor(self, pair: str, params: dict, oos_sharpe: float) -> bool:
         """
         Dispatch the validated strategy to the executor service via an HTTP POST.
+        Payload format COMPATIBLE with main.py's Go Engine webhook.
         Returns True on success, False otherwise.
         """
-        executor_url = os.environ.get(
-            "EXECUTOR_URL", "http://localhost:8000/executor/strategy"
-        )
+        # Format payload to match main.py's expectations for Go Engine /webhook/strategy
+        raw_symbol = pair.replace("/", "")
+        
         payload = {
-            "pair": pair,
-            "strategy_type": params.get("strategy_type", "RSI_MEAN_REVERSION"),
-            "direction": params.get("direction", "LONG"),
-            "rsi_period": int(params.get("rsi_period", 14)),
-            "rsi_lower": float(params.get("rsi_lower", 30)),
-            "rsi_upper": float(params.get("rsi_upper", 70)),
-            "stop_loss_pct": float(params.get("stop_loss_pct", 0.015)),
-            "take_profit_pct": float(params.get("take_profit_pct", 0.030)),
-            "oos_sharpe": float(oos_sharpe),
-            "timestamp": pd.Timestamp.now().isoformat(),
+            "symbol": raw_symbol,
+            "direction": str(params.get("direction", "LONG")),
+            "leverage": f"{params.get('leverage', 3)}x",  # Default 3x if not present
+            "rsi_lower": float(params.get("rsi_lower", 30.0)),
+            "rsi_upper": float(params.get("rsi_upper", 70.0))
         }
+
+        # Use the same webhook URL as main.py (via environment variable)
+        executor_url = os.environ.get(
+            "EXECUTOR_WEBHOOK_URL", "https://tethgard.up.railway.app/webhook/strategy"
+        )
 
         try:
             resp = requests.post(
@@ -258,7 +260,9 @@ class BayesianStrategyEngine:
     def heal_and_find_winner(self, n_trials=200, pair=None):
         """
         Run a walk‑forward optimisation, select the median‑Sharpe candidate,
-        save it locally and (if a pair is supplied) push it to the executor.
+        save it locally. 
+        Note: Does NOT push to executor here - main.py handles the push separately
+        to avoid duplicate pushes and payload format conflicts.
         Returns a tuple (best_params, success_flag).
         """
         if pair:
@@ -340,15 +344,19 @@ class BayesianStrategyEngine:
             # Store OOS Sharpe for later logging
             self.last_oos_sharpe = chosen["sharpe"]
 
-            # If a pair was supplied, push the strategy to the executor
-            if self.last_pair:
-                if self.push_strategy_to_executor(self.last_pair, best_params, self.last_oos_sharpe):
-                    print(
-                        f"🎯 [{self.last_pair}] Valid Candidate | "
-                        f"OOS Sharpe Ratio: {self.last_oos_sharpe:.2f}"
-                    )
-                else:
-                    print(f"⚠️ [{self.last_pair}] Strategy saved locally but push to executor failed.")
+            # NOTE: Push to executor is handled by main.py scan_top_pairs_for_winner()
+            # to ensure payload format compatibility and avoid double-pushing.
+            # If you want to push from here, uncomment below:
+            #
+            # if self.last_pair:
+            #     if self.push_strategy_to_executor(self.last_pair, best_params, self.last_oos_sharpe):
+            #         print(
+            #             f"🎯 [{self.last_pair}] Valid Candidate | "
+            #             f"OOS Sharpe Ratio: {self.last_oos_sharpe:.2f}"
+            #         )
+            #     else:
+            #         print(f"⚠️ [{self.last_pair}] Strategy saved locally but push to executor failed.")
+            
             return best_params, True
         else:
             # Fallback to simple MA Crossover
