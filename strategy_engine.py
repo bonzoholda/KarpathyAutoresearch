@@ -1,15 +1,15 @@
 # --------------------------------------------------------------
-# strategy_engine.py  –  Production‑Ready, Backtest‑Sanity
-#   • Fixed look‑ahead bias (all data shifted 1 bar)
-#   • Realistic cost model (fees + slippage + funding)
-#   • Walk‑Forward with embargo (no data leakage)
-#   • ADX‑based regime filter (trend vs choppy)
-#   • Reduced hyper‑parameter search space + complexity penalty
-#   • Safer OOS thresholds (Sharpe ≥0.5, win‑rate ≥50 %, trades ≥10)
-#   • Exact same CLI / save‑format / log‑messages as original
+# strategy_engine.py  -  Production-Ready, Backtest-Sanity
+#   * Fixed look-ahead bias (all data shifted 1 bar)
+#   * Realistic cost model (fees + slippage + funding)
+#   * Walk-Forward with embargo (no data leakage)
+#   * ADX-based regime filter (trend vs choppy)
+#   * Reduced hyper-parameter search space + complexity penalty
+#   * Safer OOS thresholds (Sharpe >=0.5, win-rate >=50%, trades >=10)
+#   * Exact same CLI / save-format / log-messages as original
 # --------------------------------------------------------------
 import matplotlib
-matplotlib.use('Agg')          # Headless mode – keep for any accidental plots
+matplotlib.use('Agg')          # Headless mode - keep for any accidental plots
 
 import json
 import os
@@ -22,14 +22,14 @@ import pandas as pd
 import optuna
 from sklearn.model_selection import TimeSeriesSplit
 
-# ----- Optional: monkey‑patch for vectorbt / plotly -------------------------------------------------
+# ----- Optional: monkey-patch for vectorbt / plotly -------------------------------------------------
 import plotly.graph_objs as go
 if not hasattr(go.layout.template.Data, "scattermapbox"):
-    # Inject a dummy trace to keep vectorbt’s `reset_theme()` happy
+    # Inject a dummy trace to keep vectorbt's reset_theme() happy
     setattr(go.layout.template.Data, "scattermapbox", go.layout.template.Data.scatter)
 # ----------------------------------------------------------------------------------------------------
 
-import vectorbtpro as vbt   # ✅ Import senjata rahasia VectorBT (cukup import sekali)
+import vectorbtpro as vbt   # If using open-source vectorbt, change to: import vectorbt as vbt
 
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
@@ -39,18 +39,18 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 # ------------------------------------------------------------------------------
 CONFIG_PATH = os.path.join("config", "strategy_config.json")
 
-# Production‑grade cost model (per side)
-#   • taker fee ≈ 5 bps (Binance/Bybit spot/perpetual)
-#   • slippage    ≈ 8 bps (based on 15m BTC/USDT daily vol)
-#   • funding rate ≈ 4 bps per 8h   → ≈ 12 bps per day → 0.0018 per side for typical 4h holding
-TOTAL_COST_BPS = 0.0018   # 18 bps per side ≈ 36 bps round‑trip
+# Production-grade cost model (per side)
+#   * taker fee ~= 5 bps (Binance/Bybit spot/perpetual)
+#   * slippage    ~= 8 bps (based on 15m BTC/USDT daily vol)
+#   * funding rate ~= 4 bps per 8h   -> ~= 12 bps per day -> 0.0018 per side for typical 4h holding
+TOTAL_COST_BPS = 0.0018   # 18 bps per side ~= 36 bps round-trip
 
 
 # ------------------------------------------------------------------------------
 # Helper utilities
 # ------------------------------------------------------------------------------
 def _apply_shift(df):
-    """Shift all raw OHLCV by one bar → zero look‑ahead.”
+    """Shift all raw OHLCV by one bar -> zero look-ahead."""
     df = df.copy()
     for col in ['open', 'high', 'low', 'close', 'volume']:
         df[col] = df[col].shift(1)
@@ -63,16 +63,16 @@ def _estimate_cost(fees_bps):
 
 
 # ------------------------------------------------------------------------------
-# BayesianStrategyEngine (Production‑ready)
+# BayesianStrategyEngine (Production-ready)
 # ------------------------------------------------------------------------------
 class BayesianStrategyEngine:
     def __init__(self, df: pd.DataFrame):
         """
         Initialise with raw OHLCV dataframe (no shift applied yet).
-        The engine internally shifts data to avoid look‑ahead bias.
+        The engine internally shifts data to avoid look-ahead bias.
         """
         self.raw_df = df
-        self.df = _apply_shift(df)          # ← FIXED: zero look‑ahead
+        self.df = _apply_shift(df)          # FIXED: zero look-ahead
 
     @staticmethod
     def run_backtest(df: pd.DataFrame, params: dict):
@@ -90,7 +90,7 @@ class BayesianStrategyEngine:
         direction = params["direction"]
         strategy_type = params.get("strategy_type", "RSI_MEAN_REVERSION")
 
-        # ----- Core Indicators (all on shifted data → no lookahead) -----
+        # ----- Core Indicators (all on shifted data -> no lookahead) -----
         rsi = vbt.RSI.run(df["close"], window=rsi_period).rsi
 
         # ADX for robust regime detection (primary) + EMA for secondary slow trend
@@ -100,12 +100,12 @@ class BayesianStrategyEngine:
         is_trend_regime = adx > 25
         is_choppy_regime = adx < 20
 
-        # Slow macro trend (EMA‑800 15m ≈ 8‑day average) – kept for legacy prints
+        # Slow macro trend (EMA-800 15m ~= 8-day average) - kept for legacy prints
         ema_macro = vbt.MA.run(df["close"], window=800, ewm=True).ma
         if ema_macro.dropna().empty:                       # fallback if data too short
             ema_macro = vbt.MA.run(df["close"], window=200, ewm=True).ma
 
-        # Quick EMAs for intra‑day pullbacks
+        # Quick EMAs for intra-day pullbacks
         ema20 = vbt.MA.run(df["close"], window=20, ewm=True).ma
         ema50 = vbt.MA.run(df["close"], window=50, ewm=True).ma
 
@@ -167,16 +167,16 @@ class BayesianStrategyEngine:
     # Optuna objective with complexity penalty & safety guardrails
     # ---------------------------------------------------------------------
     def _objective(self, trial, train_df: pd.DataFrame):
-        # ----- Smaller, more meaningful hyper‑parameter space -----
+        # ----- Smaller, more meaningful hyper-parameter space -----
         strategy_type = trial.suggest_categorical(
             "strategy_type", ["RSI_MEAN_REVERSION", "EMA_PULLBACK_TREND", "RSI_MOMENTUM_BREAKOUT"]
         )
         direction = trial.suggest_categorical("direction", ["LONG", "SHORT"])
 
-        # RSI bounds tighten for short‑term 15m data
+        # RSI bounds tighten for short-term 15m data
         if direction == "SHORT":
-            rsi_upper = trial.suggest_int("rsi_upper", 58, 70)   # over‑bought zone
-            rsi_lower = trial.suggest_int("rsi_lower", 30, 45)   # under‑bought zone
+            rsi_upper = trial.suggest_int("rsi_upper", 58, 70)   # over-bought zone
+            rsi_lower = trial.suggest_int("rsi_lower", 30, 45)   # under-bought zone
         else:
             rsi_upper = trial.suggest_int("rsi_upper", 55, 70)
             rsi_lower = trial.suggest_int("rsi_lower", 30, 42)
@@ -184,10 +184,10 @@ class BayesianStrategyEngine:
         params = {
             "strategy_type": strategy_type,
             "direction": direction,
-            "rsi_period": trial.suggest_int("rsi_period", 10, 14),   # Fixed 10‑14
+            "rsi_period": trial.suggest_int("rsi_period", 10, 14),   # Fixed 10-14
             "rsi_lower": rsi_lower,
             "rsi_upper": rsi_upper,
-            # Safer SL/TP – avoid sub‑1% stops that get gapped out
+            # Safer SL/TP - avoid sub-1% stops that get gapped out
             "stop_loss_pct": trial.suggest_float("stop_loss_pct", 0.012, 0.020, step=0.002),
             "take_profit_pct": trial.suggest_float("take_profit_pct", 0.025, 0.040, step=0.005),
         }
@@ -197,7 +197,7 @@ class BayesianStrategyEngine:
         complexity_penalty = 0.05 * n_params
 
         # -----------------------------------------------------------------
-        # Run backtest – note fees already include slippage & funding
+        # Run backtest - note fees already include slippage & funding
         # -----------------------------------------------------------------
         portfolio = self.run_backtest(train_df, params)
         sharpe = portfolio.sharpe_ratio()
@@ -211,17 +211,17 @@ class BayesianStrategyEngine:
         return sharpe - complexity_penalty
 
     # ---------------------------------------------------------------------
-    # Self‑healing optimiser – Walk‑Forward with embargo (no data leakage)
+    # Self-healing optimiser - Walk-Forward with embargo (no data leakage)
     # ---------------------------------------------------------------------
     def heal_and_find_winner(self, n_trials: int = 200):
         """
-        Performs a purged K‑fold walk‑forward validation (default: 5 folds,
+        Performs a purged K-fold walk-forward validation (default: 5 folds,
         24h embargo). Only returns a strategy if every fold meets the safety
-        thresholds – guaranteeing robustness.
+        thresholds - guaranteeing robustness.
         """
-        print("🔍 [Self-Healing] Running Balanced Macro Trend Optimization...")
+        print("[Self-Healing] Running Balanced Macro Trend Optimization...")
 
-        # Purged K‑fold – gap = embargo (96 bars ≈ 24 h of 15‑min candles)
+        # Purged K-fold - gap = embargo (96 bars ~= 24h of 15-min candles)
         tscv = TimeSeriesSplit(n_splits=5, gap=96, test_size=None)
         oos_metrics = []   # store dict of each accepted fold
         all_params = []    # corresponding parameters
@@ -238,7 +238,7 @@ class BayesianStrategyEngine:
             study.optimize(lambda t: self._objective(t, train_df), n_trials=n_trials//5)
 
             if study.best_value == -999.0 or len(study.best_trials) == 0:
-                print(f"   Fold {fold}: ❌ No valid candidate – skipping")
+                print(f"   Fold {fold}: No valid candidate - skipping")
                 continue
 
             best_params = study.best_params
@@ -265,17 +265,17 @@ class BayesianStrategyEngine:
                 })
                 all_params.append(best_params)
                 print(
-                    f"   Fold {fold}: ✅ Sharpe={oos_sharpe:.2f} | "
+                    f"   Fold {fold}: Sharpe={oos_sharpe:.2f} | "
                     f"WinRate={oos_winrate*100:.1f}% | Trades={oos_trades} | DD={oos_dd*100:.1f}%"
                 )
             else:
                 print(
-                    f"   Fold {fold}: ❌ Rejected – Sharpe={oos_sharpe:.2f} | "
+                    f"   Fold {fold}: Rejected - Sharpe={oos_sharpe:.2f} | "
                     f"WinRate={oos_winrate*100:.1f}% | Trades={oos_trades} | DD={oos_dd*100:.1f}%"
                 )
 
         # -----------------------------------------------------------------
-        # If we have at least 3 *consistent* folds, keep the median‑best param set
+        # If we have at least 3 *consistent* folds, keep the median-best param set
         # -----------------------------------------------------------------
         if len(oos_metrics) >= 3:
             # Sort by Sharpe and pick the middle (median) to avoid outlier luck
@@ -284,7 +284,7 @@ class BayesianStrategyEngine:
             chosen = oos_metrics[median_idx]
 
             print(
-                f"🏆 Median OOS across {len(oos_metrics)} folds: "
+                f"Median OOS across {len(oos_metrics)} folds: "
                 f"Sharpe={chosen['sharpe']:.2f} | "
                 f"WinRate={chosen['winrate']*100:.1f}% | "
                 f"Trades={chosen['trades']} | DD={chosen['dd']*100:.1f}%"
@@ -294,24 +294,24 @@ class BayesianStrategyEngine:
             self._save_winner_config(best_params)
             return best_params, True
         else:
-            print("❌ Not enough robust folds – aborting.")
+            print("Not enough robust folds - aborting.")
             return None, False
 
     # ---------------------------------------------------------------------
-    # Utility – persist winner config
+    # Utility - persist winner config
     # ---------------------------------------------------------------------
     def _save_winner_config(self, params: dict):
         try:
             os.makedirs("config", exist_ok=True)
             with open(CONFIG_PATH, "w") as f:
                 json.dump(params, f, indent=4)
-            print("💾 Winner config successfully saved to local JSON file.")
+            print("Winner config successfully saved to local JSON file.")
         except Exception as e:
-            print(f"⚠️ Failed to save winner config JSON: {e}")
+            print(f"Failed to save winner config JSON: {e}")
 
 
 # ------------------------------------------------------------------------------
-# Helper – load the currently active config (unchanged API)
+# Helper - load the currently active config (unchanged API)
 # ------------------------------------------------------------------------------
 def load_active_config():
     if os.path.exists(CONFIG_PATH):
@@ -333,7 +333,7 @@ if __name__ == "__main__":
     best_params, success = engine.heal_and_find_winner(n_trials=200)
 
     if success:
-        print("\n🚀 PRODUCTION READY – best_params saved:")
+        print("\nPRODUCTION READY - best_params saved:")
         print(json.dumps(best_params, indent=2))
     else:
-        print("\n⚠️  No strategy passed validation – please check data/quality.")
+        print("\nNo strategy passed validation - please check data/quality.")
