@@ -9,8 +9,8 @@ plotly>=5.0
 
 # VectorBT (install via pip)
 # Pilih salah satu:
-vectorbt      # versi open-source
-# vectorbt-pro>=0.7    # versi Pro (lebih cepat & dukungan penuh)
+# vectorbt      # versi open-source
+vectorbt-pro>=0.7    # versi Pro (lebih cepat & dukungan penuh)
 
 # Optimization
 optuna>=3.0
