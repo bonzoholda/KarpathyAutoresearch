@@ -1,8 +1,23 @@
-plotly==5.22.0
-vectorbt
-optuna
-ccxt
-pandas
-numpy
-requests
-matplotlib
+# Core scientific stack
+numpy>=1.21
+pandas>=1.3
+scipy>=1.7
+
+# Visualization
+matplotlib>=3.4
+plotly>=5.0
+
+# VectorBT (install via pip)
+# Pilih salah satu:
+vectorbt      # versi open-source
+# vectorbt-pro>=0.7    # versi Pro (lebih cepat & dukungan penuh)
+
+# Optimization
+optuna>=3.0
+
+# Data exchange
+requests>=2.26
+ccxt>=1.70
+
+# Machine learning (WAJIB untuk TimeSeriesSplit)
+scikit-learn>=1.0
