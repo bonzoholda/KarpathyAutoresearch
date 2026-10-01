@@ -1,5 +1,5 @@
 # --------------------------------------------------------------
-# strategy_engine.py - Production-Ready Backtesting Engine
+# strategy_engine.py - Production-Ready Backtesting Engine (TethGard 2.0)
 # --------------------------------------------------------------
 import json
 import os
@@ -8,7 +8,6 @@ import numpy as np
 import pandas as pd
 import optuna
 from sklearn.model_selection import TimeSeriesSplit
-import requests
 
 import matplotlib
 matplotlib.use('Agg')
@@ -100,8 +99,9 @@ class BayesianStrategyEngine:
         adx_series = compute_adx(df["high"], df["low"], df["close"], period=14)
         adx = adx_series
 
-        is_trend_regime = adx > 20   
-        is_choppy_regime = adx < 30  
+        # 🛡️ Dynamic ADX Regime Thresholds aligned with Go Engine
+        is_trend_regime = adx >= 25.0   
+        is_choppy_regime = adx < 22.0  
 
         ema20 = vbt.MA.run(df["close"], window=20, ewm=True).ma
         ema50 = vbt.MA.run(df["close"], window=50, ewm=True).ma
@@ -168,8 +168,8 @@ class BayesianStrategyEngine:
             "rsi_period": trial.suggest_int("rsi_period", 10, 20),
             "rsi_lower": rsi_lower,
             "rsi_upper": rsi_upper,
-            "stop_loss_pct": trial.suggest_float("stop_loss_pct", 0.015, 0.035, step=0.005),
-            "take_profit_pct": trial.suggest_float("take_profit_pct", 0.030, 0.060, step=0.005),
+            "stop_loss_pct": trial.suggest_float("stop_loss_pct", 0.020, 0.040, step=0.005),
+            "take_profit_pct": trial.suggest_float("take_profit_pct", 0.040, 0.065, step=0.005),
         }
 
         n_params = len(params) - 2
@@ -184,39 +184,6 @@ class BayesianStrategyEngine:
             return -999.0
 
         return sharpe - complexity_penalty
-
-    def push_strategy_to_executor(self, pair: str, params: dict, oos_sharpe: float) -> bool:
-        raw_symbol = pair.replace("/", "")
-        
-        payload = {
-            "symbol": raw_symbol,
-            "direction": str(params.get("direction", "LONG")),
-            "leverage": f"{params.get('leverage', 3)}x",
-            "rsi_lower": float(params.get("rsi_lower", 30.0)),
-            "rsi_upper": float(params.get("rsi_upper", 70.0))
-        }
-
-        executor_url = os.environ.get(
-            "EXECUTOR_WEBHOOK_URL", "https://tethgard.up.railway.app/webhook/strategy"
-        )
-
-        try:
-            resp = requests.post(
-                executor_url,
-                json=payload,
-                timeout=10,
-                headers={"Content-Type": "application/json"},
-            )
-            if resp.status_code == 200:
-                print(f"✅ [Executor] Strategy for {pair} pushed successfully.")
-                return True
-            print(
-                f"⚠️ [Executor] Push for {pair} failed (HTTP {resp.status_code}): {resp.text}"
-            )
-            return False
-        except Exception as e:
-            print(f"❌ [Executor] Failed to push {pair}: {e}")
-            return False
 
     def heal_and_find_winner(self, n_trials=200, pair=None):
         if pair:
@@ -322,26 +289,9 @@ class BayesianStrategyEngine:
         except Exception as e:
             print(f"❌ Failed to save winner config JSON: {e}")
 
-# 💡 FUNGSI WAJIB UNTUK IMPORT main.py
 def load_active_config():
     """Load the most recently saved strategy configuration."""
     if os.path.exists(CONFIG_PATH):
         with open(CONFIG_PATH, "r") as f:
             return json.load(f)
     return None
-
-if __name__ == "__main__":
-    if os.path.exists("market_data.csv"):
-        df = pd.read_csv("market_data.csv")
-        df["timestamp"] = pd.to_datetime(df["timestamp"])
-        df.set_index("timestamp", inplace=True)
-
-        engine = BayesianStrategyEngine(df)
-        best_params, success = engine.heal_and_find_winner(n_trials=200, pair="BTC/USDT")
-
-        if success:
-            print("\nPRODUCTION READY - best_params saved:")
-            print(json.dumps(best_params, indent=2))
-        else:
-            print("\nUsing fallback strategy (MA Crossover) - best_params saved:")
-            print(json.dumps(best_params, indent=2))
