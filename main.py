@@ -41,7 +41,6 @@ EXECUTOR_URL = RAW_EXECUTOR_URL.strip().rstrip('/')
 def get_executor_active_slots_count() -> int:
     """Mengecek jumlah slot aktif di Executor via API GET /position"""
     try:
-        # Mengambil base URL domain (tanpa path /webhook/strategy)
         if "/webhook" in EXECUTOR_URL:
             base_url = EXECUTOR_URL.split("/webhook")[0]
         else:
@@ -67,9 +66,11 @@ def push_winning_strategy_to_executor(params: dict) -> bool:
         payload = {
             "symbol": formatted_symbol,
             "direction": str(params.get('direction', 'LONG')),
-            "leverage": f"{params.get('leverage', 3)}x",
+            "leverage": "3x",
             "rsi_lower": float(params.get('rsi_lower', 30.0)),
-            "rsi_upper": float(params.get('rsi_upper', 70.0))
+            "rsi_upper": float(params.get('rsi_upper', 70.0)),
+            "strategy_type": str(params.get('strategy_type', 'RSI_MEAN_REVERSION')),
+            "oos_sharpe": float(params.get('oos_sharpe', 1.0))
         }
 
         print(f"📡 Target Endpoint: {EXECUTOR_URL}")
@@ -140,6 +141,7 @@ def scan_top_pairs_for_winner():
                 highest_oos_sharpe = val_sharpe
                 params['symbol'] = pair
                 params['latest_price'] = latest_price
+                params['oos_sharpe'] = val_sharpe
                 best_candidate_params = params
                 winning_pair = pair
                 winning_engine = engine
