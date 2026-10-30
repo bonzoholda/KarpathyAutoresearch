@@ -1,18 +1,27 @@
 [project]
 name = "tethgard-autoresearch"
-version = "0.2.0"
-description = "Autonomous Quant Trading Research & Optimization Engine for Tethgard"
+version = "0.3.0"
+description = "TethGard signal feeder: an honest walk-forward search over the parameters the Go executor actually runs"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "ccxt>=4.4.0",
-    "matplotlib>=3.10.0",
     "numpy>=2.0.0",
-    "optuna>=4.0.0",
     "pandas>=2.2.0",
-    "plotly>=5.22.0",
     "requests>=2.32.0",
-    "vectorbt>=0.26.0",
+]
+
+# vectorbt, optuna and scikit-learn were removed in 0.3.0. See
+# requirements.txt for why: the backtest now mirrors the executor's exit
+# ladder directly, and the 52-point search space is swept exhaustively
+# instead of randomly. The previous list also declared scikit-learn in
+# requirements.txt but NOT here, so a `uv sync` install failed to import
+# TimeSeriesSplit.
+
+[project.optional-dependencies]
+notebook = [
+    "matplotlib>=3.10.0",
+    "plotly>=5.22.0",
 ]
 
 [tool.uv]

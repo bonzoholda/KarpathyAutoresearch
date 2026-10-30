@@ -1,9 +1,25 @@
-plotly==5.22.0
-vectorbt
-optuna
-ccxt
-pandas
-numpy
-requests
-matplotlib
-scikit-learn>=1.0
+# Runtime dependencies for the autoresearch feeder.
+#
+# This list used to carry vectorbt, optuna and scikit-learn. None of
+# them are needed any more:
+#
+#   vectorbt     the backtest now mirrors the executor's own exit ladder
+#                directly (exit_policy.py), so there is no second
+#                backtester whose conventions could differ.
+#   optuna       the search space is 52 executable parameter sets, so an
+#                exhaustive grid is used instead. That is deterministic,
+#                which is what a cron job needs, and it makes the number
+#                of candidates tested an exact constant, which is what
+#                the multiple-testing correction needs.
+#   scikit-learn the walk-forward splits are computed here.
+#
+# A smaller dependency list also means a smaller, faster, less fragile
+# install on Railway.
+
+ccxt>=4.4.0
+numpy>=2.0.0
+pandas>=2.2.0
+requests>=2.32.0
+
+# Only needed for analysis.ipynb, which is not part of the cron cycle.
+# Install with: pip install matplotlib plotly
