@@ -152,7 +152,8 @@ def webhook_url() -> str:
 
 
 def push_strategy(symbol: str, direction: str, rsi_lower: float, rsi_upper: float,
-                  leverage: str = "3x", dry_run: bool = False) -> bool:
+                  leverage: str = "3x", dry_run: bool = False,
+                  retired: bool = False) -> bool:
     """Register (or replace) the strategy the executor will trade.
 
     The payload carries exactly the fields the executor's
@@ -160,6 +161,10 @@ def push_strategy(symbol: str, direction: str, rsi_lower: float, rsi_upper: floa
     strategy_type and oos_sharpe, which the Go handler silently
     discarded -- which is how a strategy validated as a momentum
     breakout could be executed as a mean reversion.
+
+    `retired` is the explicit retirement flag. The executor stores it and
+    refuses to arm a row that carries it, so a retired symbol is blocked
+    by state rather than by an unreachable threshold.
     """
     url = webhook_url()
     payload = {
@@ -169,6 +174,7 @@ def push_strategy(symbol: str, direction: str, rsi_lower: float, rsi_upper: floa
         "rsi_lower": float(rsi_lower),
         "rsi_upper": float(rsi_upper),
         "updated_at": datetime.now(timezone.utc).isoformat(),
+        "retired": bool(retired),
     }
 
     if dry_run:
@@ -195,11 +201,23 @@ def push_strategy(symbol: str, direction: str, rsi_lower: float, rsi_upper: floa
 def push_neutral(symbol: str, dry_run: bool = False) -> bool:
     """Retire a strategy so the executor stops trading that symbol.
 
-    A LONG with rsi_lower = 0 can never arm: the ticker requires
-    liveRSI <= rsi_lower and the RSI is never 0. The row still exists,
-    so the symbol stays visible in the dashboard, but it cannot trade.
+    Two things are pushed together, and both matter:
+
+    1. `retired = true` -- the explicit flag. The executor stores it and its
+       arming gate refuses any row that carries it.
+    2. The neutral thresholds LONG / rsi_lower = 0 -- the legacy shape. The
+       row still exists so the symbol stays visible in the dashboard, and
+       the shape keeps older executors (which predate the flag) from
+       trading it too.
+
+    The previous docstring here claimed "the RSI is never 0". That was
+    wrong: the executor's own calculateRSI returns exactly 0.0 when the
+    average gain is zero, which happens on a pure downtrend series. A LONG
+    with rsi_lower = 0 arms on liveRSI <= 0, so the neutral shape alone
+    could never be relied on to block a position. The explicit flag is
+    what makes the retirement safe.
     """
-    return push_strategy(symbol, "LONG", 0.0, 100.0, dry_run=dry_run)
+    return push_strategy(symbol, "LONG", 0.0, 100.0, dry_run=dry_run, retired=True)
 
 
 # ------------------------------------------------------------------ state
