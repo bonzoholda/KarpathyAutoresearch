@@ -80,6 +80,25 @@ def critical_t(trials: int, alpha: float) -> float:
     return NormalDist().inv_cdf(p)
 
 
+def load_active_config():
+    """The strategies published by the last cycle, or None.
+
+    Kept here because it used to live in this module; main.py writes
+    the file and also exposes its own copy.
+    """
+    import json
+    import os
+
+    path = os.path.join("config", "strategy_config.json")
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            return json.load(handle).get("active") or None
+    except (OSError, ValueError):
+        return None
+
+
 def build_candidates():
     """Every parameter set the executor can actually be given.
 
