@@ -345,18 +345,78 @@ def test_payload_only_carries_fields_the_executor_understands():
     assert accepted <= {"direction", "rsi_lower", "rsi_upper"}
     assert main.executor_symbol("BTC/USDT") == "BTCUSDT"
     assert main.executor_symbol("BTC/USDT:USDT") == "BTCUSDT"
-    assert main.executor_symbol("XAUT/USDT") == "XAUTUSDT"
+    # Both gold spellings must collapse to the single OKX perpetual row.
+    assert main.executor_symbol("XAU/USDT") == "XAUUSDT"
+    assert main.executor_symbol("XAUT/USDT") == "XAUUSDT"
 
 
 def test_neutral_row_can_never_arm():
-    """Retiring a symbol relies on the ticker gate, not on the strategy."""
-    # The ticker arms a LONG only when liveRSI <= rsi_lower, and the RSI is
-    # never 0, so a LONG with rsi_lower = 0 is inert.
+    """The neutral shape must not generate entries in the research engine.
+
+    IMPORTANT: this is NOT the safety guarantee. The old docstring claimed
+    "the RSI is never 0". That was wrong — the Go executor's calculateRSI
+    returns exactly 0.0 on a pure downtrend (avgGain == 0), so a LONG with
+    rsi_lower = 0 would arm on liveRSI <= 0. Retirement is safe because the
+    executor ALSO receives `retired: true` and its CanArm() gate refuses
+    the row. Never delete that explicit flag.
+    """
     assert config.RSI_LOWER_RANGE[0] > 0
     neutral = {"direction": "LONG", "rsi_lower": 0.0, "rsi_upper": 100.0}
     engine = _engine_with_rsi([(3, 50.0), (4, 50.0)])
     entries = np.nonzero(engine.build_entries(neutral, 0, 30))[0].tolist()
     assert entries == [], "a neutral row must never produce an entry"
+
+
+def test_default_pairs_use_the_instrument_that_actually_exists():
+    """OKX has XAU-USDT-SWAP (perp) and XAUT-USDT (SPOT), never XAUT-USDT-SWAP.
+
+    The old pair silently failed fetch_ohlcv on every cycle, so gold was
+    never evaluated and no row was ever published for it.
+    """
+    import main
+
+    assert "XAU/USDT" in main.DEFAULT_PAIRS
+    assert "XAUT/USDT" not in main.DEFAULT_PAIRS
+    assert len(main.DEFAULT_PAIRS) == 10
+    assert main.to_ccxt_swap("XAU/USDT") == "XAU/USDT:USDT"
+    assert main.executor_symbol("XAU/USDT") == "XAUUSDT"
+
+
+def test_payloads_express_retirement_and_re_arming_explicitly():
+    """A fresh winner re-arms a retired symbol; a rejection retires it.
+
+    The executor's guard is deliberately absolute. Re-arming is achieved
+    by publishing a NEW payload with retired=False and reachable
+    thresholds — never by relaxing the guard.
+    """
+    import main
+
+    captured = []
+
+    class FakeResponse:
+        status_code = 200
+        text = "ok"
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        captured.append(dict(json or {}))
+        return FakeResponse()
+
+    original_post = main.requests.post
+    main.requests.post = fake_post
+    try:
+        assert main.push_strategy("BTC/USDT", "SHORT", 30.0, 62.0) is True
+        assert main.push_neutral("BTC/USDT") is True
+    finally:
+        main.requests.post = original_post
+
+    winner, neutral = captured
+    assert winner["symbol"] == "BTCUSDT"
+    assert winner["retired"] is False
+    assert 0 < winner["rsi_upper"] < 100
+    assert winner["updated_at"], "the executor needs a fresh timestamp to trust the row"
+    assert neutral["retired"] is True
+    assert neutral["rsi_lower"] == 0.0 and neutral["rsi_upper"] == 100.0
+    assert neutral["updated_at"], "a retirement marker must also be fresh"
 
 
 # ---------------------------------------------------------------------------

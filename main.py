@@ -56,7 +56,13 @@ DEFAULT_PAIRS = [
     "ADA/USDT",
     "DOGE/USDT",
     "AVAX/USDT",
-    "XAUT/USDT",
+    # Gold PERP on OKX is XAU-USDT-SWAP. There is no XAUT-USDT-SWAP
+    # (the API answers 51001), so the old "XAUT/USDT" pair never fetched
+    # a single candle and this symbol was silently skipped every cycle.
+    # XAUT-USDT is a SPOT instrument, not the perpetual the executor
+    # trades. Keep the perp spelling here so to_ccxt_swap() resolves to
+    # the contract that actually exists.
+    "XAU/USDT",
     "NEAR/USDT",
 ]
 
@@ -77,7 +83,13 @@ def executor_symbol(symbol: str) -> str:
         cleaned = cleaned.split(":", 1)[0]
     if cleaned.endswith("-SWAP"):
         cleaned = cleaned[: -len("-SWAP")]
-    return cleaned.replace("/", "").replace("-", "")
+    cleaned = cleaned.replace("/", "").replace("-", "")
+    # The executor canonicalises XAUT* -> XAU* because both spellings
+    # resolve to the same OKX perpetual. Normalise at the source too so a
+    # legacy --symbols override cannot resurrect the duplicate row.
+    if cleaned.startswith("XAUT"):
+        cleaned = "XAU" + cleaned[len("XAUT"):]
+    return cleaned
 
 
 def to_ccxt_swap(symbol: str) -> str:
@@ -165,6 +177,13 @@ def push_strategy(symbol: str, direction: str, rsi_lower: float, rsi_upper: floa
     `retired` is the explicit retirement flag. The executor stores it and
     refuses to arm a row that carries it, so a retired symbol is blocked
     by state rather than by an unreachable threshold.
+
+    Re-arming works through THIS function, not by weakening the executor's
+    guard: when a later cycle finds a winner it calls push_strategy with
+    retired=False and reachable thresholds. The executor's DeriveRetired
+    then stores retired=false and the row passes CanArm again. The guard
+    itself stays absolute, so a retirement marker can never be talked
+    back into trading.
     """
     url = webhook_url()
     payload = {
@@ -272,7 +291,19 @@ def main() -> int:
         log(f"- {symbol}")
         frame = fetch_ohlcv(symbol)
         if frame is None:
-            log(f"  !! {symbol}: no data, skipping (this is NOT a decision)")
+            # An unavailable feed is NOT a licence to keep trading the
+            # previous row. The executor's freshness gate expires rows it
+            # has not heard about in 48h, but until then an unvalidated
+            # symbol would still look armed. Retiring it explicitly is the
+            # conservative choice; the next successful cycle re-arms it by
+            # pushing a fresh winner payload with retired=False.
+            log(f"  !! {symbol}: no data — cannot validate, retiring (not a winner)")
+            if config.RETIRE_FAILED_SYMBOLS:
+                if push_neutral(symbol, dry_run=args.dry_run):
+                    pushed += 1
+            # Record the outcome either way: `len(decisions)` is reported as
+            # "symbols scanned" and a failed feed must not silently vanish.
+            decisions[symbol] = {"status": "no_data", "last_bar": None}
             continue
 
         last_bar = int(frame["ts"].iloc[-1])

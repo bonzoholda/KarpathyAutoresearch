@@ -159,7 +159,22 @@ needed room while the trail only arms at +3.0.
 | `AUTORESEARCH_MIN_T` | `1.96` | holdout t-statistic required |
 | `AUTORESEARCH_REQUIRE_DEFLATED` | `false` | also require the multiple-testing critical value |
 | `AUTORESEARCH_ENTRY_FILTER` | `true` | mirror the executor's entry filter |
-| `AUTORESEARCH_RETIRE_FAILED` | `true` | push a neutral row for symbols that failed |
+| `AUTORESEARCH_RETIRE_FAILED` | `true` | push a neutral row for symbols that failed (including a failed data fetch) |
+
+### Gold uses the perpetual, not the spot token
+
+`DEFAULT_PAIRS` uses `XAU/USDT`. OKX lists `XAU-USDT-SWAP` (the perpetual
+the executor trades) and `XAUT-USDT` (a **spot** instrument), but there is no
+`XAUT-USDT-SWAP` — requesting its candles returns `51001`. The old
+`"XAUT/USDT"` entry therefore never fetched a single bar, hit the
+"no data, skipping" branch on every run, and no row was ever published for
+gold. `executor_symbol()` also collapses any legacy `XAUT*` spelling to
+`XAU*` so the duplicate database row cannot come back.
+
+A failed data fetch is now treated as a retirement decision, not a silent
+skip: an unvalidated symbol must not keep trading on yesterday's row. The
+next successful cycle re-arms it by pushing a fresh winner payload with
+`retired: false`.
 | `AUTORESEARCH_FOLDS` | `5` | walk-forward folds inside the development set |
 | `AUTORESEARCH_INVERSION` | `true` | mirror the executor's trend inversion |
 
