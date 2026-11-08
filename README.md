@@ -28,11 +28,12 @@ The executor stores a strategy as five fields and ignores everything else:
 ```go
 type ActiveStrategy struct {
     Symbol    string  // "BTCUSDT"
-    Direction string  // "LONG" | "SHORT"
+    Direction string  // "LONG" | "SHORT" (BUY/SELL are normalised)
     Leverage  string  // "3x"
     RSILower  float64 // LONG arms when liveRSI <= RSILower
     RSIUpper  float64 // SHORT arms when liveRSI >= RSIUpper
-    UpdatedAt string
+    UpdatedAt string  // ISO-8601; must be fresh (48 h) or the row cannot arm
+    Retired   bool    // explicit retirement flag
 }
 ```
 
@@ -40,6 +41,18 @@ type ActiveStrategy struct {
 this service now searches only over `direction` and one RSI threshold:
 **anything the executor discards must not be in the search space**, or the
 backtest validates a robot that never runs.
+
+Two fields are part of the *safety* contract, not the signal:
+
+* `retired: true` for every symbol that fails validation. A `LONG` with
+  `rsi_lower = 0` is **not** safe on its own — the executor's RSI can return
+  exactly `0.0` on a pure downtrend, so the marker shape alone can arm. The
+  explicit flag plus the executor's `CanArm()` guard is what makes retirement
+  absolute.
+* `updated_at` must be a current ISO-8601 timestamp. The executor expires rows
+  older than 48 h and treats an empty/unparseable timestamp as expired. A
+  cycle that publishes nothing therefore does **not** leave a tradeable row
+  behind.
 
 What the executor actually does with a signal:
 
@@ -70,7 +83,7 @@ information that did not exist when the decision was made.
 | 6 | a 10-day window | 1000 bars = 10.4 days. On a 166-bar test fold the standard error of an annualised Sharpe is ±14.5, and the acceptance gate was `oos_sharpe > 0.1` — **0.007 of one standard error** | 180 days, a 45-day holdout scored exactly once, and a t-statistic gate |
 | 7 | no multiple-testing correction | 1000 backtests per cycle × 48 cycles per day = 48,000 backtests per day on the same 10-day window, then the maximum was published | 52 candidates, so the multiple-testing critical value is an exact constant (3.10) and is reported on every cycle |
 | 8 | a dishonest fallback | when no candidate passed, the old engine fell back to `MA_CROSSOVER` — a strategy the executor cannot execute — and shipped it anyway | there is no fallback. A cycle that finds nothing says so and publishes nothing |
-| 9 | stale strategies never expired | the executor's `GetActiveStrategies()` returns every row with no expiry, and the old feeder pushed one winner per cycle, so symbols accumulated strategies from older regimes forever | every symbol in the universe gets a decision each cycle; failures are pushed as a neutral row (`LONG`, `rsi_lower = 0`), which the ticker can never arm |
+| 9 | stale strategies never expired | the executor's `GetActiveStrategies()` returned every row with no expiry, and the old feeder pushed one winner per cycle, so symbols accumulated strategies from older regimes forever | every symbol in the universe gets a decision each cycle; failures are pushed as a retirement row (`LONG`, `rsi_lower = 0`, `rsi_upper = 100`, `retired: true`). The executor also expires rows older than 48 h. **The threshold shape alone is unsafe** — RSI can be exactly `0.0` — so the explicit flag is mandatory |
 | 10 | research halted when the bot was busy | the cycle was skipped whenever 3 slots were occupied, so the research stopped exactly when it mattered | the search always runs; the executor's own guards still protect the account |
 
 ### Why the old search "worked"
@@ -159,7 +172,22 @@ needed room while the trail only arms at +3.0.
 | `AUTORESEARCH_MIN_T` | `1.96` | holdout t-statistic required |
 | `AUTORESEARCH_REQUIRE_DEFLATED` | `false` | also require the multiple-testing critical value |
 | `AUTORESEARCH_ENTRY_FILTER` | `true` | mirror the executor's entry filter |
-| `AUTORESEARCH_RETIRE_FAILED` | `true` | push a neutral row for symbols that failed (including a failed data fetch) |
+| `AUTORESEARCH_RETIRE_FAILED` | `true` | push a retirement row for symbols that failed (including a failed data fetch) |
+| `AUTORESEARCH_FOLDS` | `5` | walk-forward folds inside the development set |
+| `AUTORESEARCH_INVERSION` | `true` | mirror the executor's trend inversion |
+
+### How a retired symbol becomes armed again
+
+Re-arming never weakens the executor's guard. A later cycle that finds a
+winner pushes a **fresh payload** with `retired: false`, reachable thresholds
+and a current `updated_at`; the executor's `DeriveRetired()` clears the flag
+and the row is UPSERTed over the old marker. A cycle with no winner publishes
+a retirement row instead, so a symbol is either currently armed or explicitly
+inactive — never silently left on yesterday's parameters.
+
+A failed OHLCV fetch is recorded in `decisions` **even when retirement
+pushing is disabled**, so the "symbols scanned" tally stays honest. The old
+code skipped the symbol entirely and hid the failure.
 
 ### Gold uses the perpetual, not the spot token
 
@@ -175,8 +203,9 @@ A failed data fetch is now treated as a retirement decision, not a silent
 skip: an unvalidated symbol must not keep trading on yesterday's row. The
 next successful cycle re-arms it by pushing a fresh winner payload with
 `retired: false`.
-| `AUTORESEARCH_FOLDS` | `5` | walk-forward folds inside the development set |
-| `AUTORESEARCH_INVERSION` | `true` | mirror the executor's trend inversion |
+
+Verified live against OKX: `XAU-USDT-SWAP` candles return `code 0`, while
+`XAUT-USDT-SWAP` returns `51001` ("Instrument ID ... doesn't exist").
 
 ---
 
@@ -189,9 +218,23 @@ python main.py --dry-run                 # search and report, publish nothing
 python main.py --dry-run --symbols BTC/USDT
 python main.py                           # publish to the executor
 
-python tests/test_pipeline.py            # 21 tests, no pytest needed
+python tests/test_pipeline.py            # 23 tests, no pytest needed
 python research/entry_vs_exit.py         # the entry-vs-exit decomposition
 ```
+
+### Verification (2026-11-09 audit)
+
+| Check | Command | Result |
+|---|---|---|
+| Syntax | `python -m py_compile main.py config.py tests/test_pipeline.py` | ✅ |
+| Test suite | `python tests/test_pipeline.py` | ✅ `23/23 passed` |
+| Payload contract | `test_payloads_express_retirement_and_re_arming_explicitly` | ✅ `retired` + fresh `updated_at` on both winner and retirement rows |
+| Gold instrument | `test_default_pairs_use_the_instrument_that_actually_exists` | ✅ `XAU/USDT`, `XAUT*` collapsed |
+| Executor parity | `test_rsi_matches_go`, `test_rsi_boundaries`, `test_simulate_stops_out_and_locks_profit` | ✅ |
+
+The runner in `tests/test_pipeline.py` needs **no pytest**. Local development
+requires `numpy`, `pandas` and `requests`; `ccxt` is not required to inspect
+market data because OKX's public REST endpoints are used directly.
 
 ### A note on the cron cadence
 
@@ -222,3 +265,23 @@ dashboard, not in this repository.
 `program.md`, `strategy_candidate.py` and `evaluator.py` are inherited from
 the upstream Karpathy fork and are **not** part of the cron cycle. They
 describe an agent loop that was never wired into production.
+
+---
+
+## Recent hardening / changelog
+
+| Commit | What |
+|---|---|
+| `bd552b9` | Retirement uses an explicit `retired: true` flag, not just an unreachable threshold; winner payloads express `retired: false` + fresh `updated_at` |
+| `b2f3b98` | `DEFAULT_PAIRS` uses `XAU/USDT` (the OKX perpetual); `executor_symbol()` collapses `XAUT*` → `XAU*`; failed fetches retire the symbol and are always recorded in `decisions` |
+| *this change* | Documentation brought in line with the executor's 48 h freshness gate, `retired` flag, webhook payload validation, single-writer trade journal and the full audit/verification matrix |
+
+Executor side (see `tethgard-multi-go/README.md`): the same audit fixed
+`POST /webhook/strategy` accepting junk payloads, corrected `.env.example`,
+and removed the duplicate trade-log importer. This repo's branch is
+**`master`**, not `main`:
+
+```bash
+git push origin master
+git ls-remote origin HEAD
+```
