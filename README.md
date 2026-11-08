@@ -274,7 +274,7 @@ describe an agent loop that was never wired into production.
 |---|---|
 | `bd552b9` | Retirement uses an explicit `retired: true` flag, not just an unreachable threshold; winner payloads express `retired: false` + fresh `updated_at` |
 | `b2f3b98` | `DEFAULT_PAIRS` uses `XAU/USDT` (the OKX perpetual); `executor_symbol()` collapses `XAUT*` → `XAU*`; failed fetches retire the symbol and are always recorded in `decisions` |
-| *this change* | Documentation brought in line with the executor's 48 h freshness gate, `retired` flag, webhook payload validation, single-writer trade journal and the full audit/verification matrix |
+| `4ff5c1f` | Documentation brought in line with the executor's 48 h freshness gate, `retired` flag, webhook payload validation, single-writer trade journal and the full audit/verification matrix |
 
 Executor side (see `tethgard-multi-go/README.md`): the same audit fixed
 `POST /webhook/strategy` accepting junk payloads, corrected `.env.example`,
