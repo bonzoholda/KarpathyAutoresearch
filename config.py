@@ -159,8 +159,28 @@ SYMBOLS = [
     for s in os.getenv("AUTORESEARCH_SYMBOLS", "").split(",")
     if s.strip()
 ]
-# When a symbol fails the gate, push a neutral row so the executor stops
-# trading a stale strategy. The executor has no expiry of its own
-# (GetActiveStrategies returns every row), so a symbol pushed once would
-# otherwise keep trading forever.
+# When a symbol fails the gate, push a neutral row immediately so the
+# executor stops trading a stale strategy. The executor ALSO expires any
+# row not refreshed within 48h (StrategyMaxAge), but relying on that alone
+# would leave up to two days of an unvalidated symbol looking tradeable.
 RETIRE_FAILED_SYMBOLS = _bool("AUTORESEARCH_RETIRE_FAILED", True)
+
+# ------------------------------------------------------------------ lanes
+# `strict` (default) publishes only candidates that clear every statistical
+# gate. On a signal with no measured edge that is the correct behaviour for
+# real money — but on a PAPER deployment it also means the system never
+# collects a single forward out-of-sample trade and can never learn.
+#
+# `shadow` adds an explicitly labelled, paper-only exploration lane: when a
+# symbol is rejected, its best available candidate is published with
+# mode="shadow" and research.status="shadow". The executor refuses to arm it
+# unless SHADOW_TRADING_ENABLED=true is ALSO set there, and even then routes
+# it to paper only, never to a real OKX key. Two independent switches, both
+# default OFF, mean neither service can start trading on its own.
+#
+# This does NOT lower the statistical bar. A shadow row is not a winner, is
+# labelled as such everywhere (payload, DB, dashboard), and its trades are
+# kept separate from the validated track.
+PUBLISH_MODE = os.getenv("AUTORESEARCH_MODE", "strict").strip().lower()
+if PUBLISH_MODE not in ("strict", "shadow"):
+    PUBLISH_MODE = "strict"

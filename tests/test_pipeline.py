@@ -451,6 +451,124 @@ def test_median_fold_keeps_parameters_with_metrics():
 
 
 # ---------------------------------------------------------------------------
+# Research telemetry, gold pair vocabulary, and the shadow lane
+# ---------------------------------------------------------------------------
+def test_research_telemetry_travels_with_every_row():
+    """A rejection must not degrade into a silent "Inactive" card.
+
+    The scanner computes the binding gate numbers; the executor persists
+    them; the dashboard explains them. Dropping the verdict on the way to
+    the webhook is exactly the black box that made two idle weeks look like
+    an outage.
+    """
+    import main
+
+    report = {
+        "holdout": {"n": 75, "mean": -0.3397, "t_stat": -1.5899},
+        "required_t": 1.96,
+        "folds_pass": 1,
+        "folds": [{}, {}, {}, {}, {}],
+        "pooled_trades": 210,
+        "params": {"direction": "SHORT", "rsi_lower": 30.0, "rsi_upper": 78.0},
+        "reasons": ["holdout t -1.59 < required 1.96", "only 1/5 walk-forward folds were profitable"],
+        "bars": 17280,
+    }
+    research = main.build_research("rejected", report)
+    assert research["status"] == "rejected"
+    assert research["mode"] == "strict"
+    assert research["holdout_t"] == -1.5899
+    assert research["required_t"] == 1.96
+    assert research["folds_pass"] == 1 and research["folds_total"] == 5
+    assert research["best_candidate"] == "SHORT rsi>=78"
+    assert research["scanned_at"], "the executor needs a scan timestamp"
+    assert len(research["reasons"]) == 2
+
+    captured = []
+
+    class FakeResponse:
+        status_code = 200
+        text = "ok"
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        captured.append(dict(json or {}))
+        return FakeResponse()
+
+    original_post = main.requests.post
+    main.requests.post = fake_post
+    try:
+        assert main.push_neutral("BTC/USDT", research=research) is True
+        assert main.push_strategy("ETH/USDT", "SHORT", 30.0, 65.0,
+                                  research=main.build_research("winner", report)) is True
+        assert main.push_strategy("SOL/USDT", "LONG", 30.0, 70.0) is True
+    finally:
+        main.requests.post = original_post
+
+    neutral, winner, bare = captured
+    assert neutral["research"]["status"] == "rejected"
+    assert neutral["mode"] == "strict" and neutral["retired"] is True
+    assert winner["research"]["status"] == "winner" and winner["retired"] is False
+    # A payload without a verdict must NOT send an empty object — that would
+    # wipe the previous cycle's reasons in the executor.
+    assert "research" not in bare
+    assert bare["mode"] == "strict"
+
+
+def test_xautusdt_is_not_a_tradable_pair():
+    """OKX lists only XAU-USDT-SWAP; a legacy --symbols override must fail loudly."""
+    import main
+
+    assert main.reject_untradable_pairs(["BTC/USDT", "XAU/USDT"]) == ["BTC/USDT", "XAU/USDT"]
+    for bad in ("XAUT/USDT", "XAUTUSDT", "XAUT-USDT-SWAP", "xaut/usdt:usdt"):
+        try:
+            main.reject_untradable_pairs([bad])
+        except ValueError as exc:
+            assert "XAU-USDT-SWAP" in str(exc)
+        else:
+            raise AssertionError(f"{bad!r} must be rejected, not silently traded")
+    # executor_symbol keeps the collapse as a legacy DATA guard only.
+    assert main.executor_symbol("XAUT/USDT") == "XAUUSDT"
+
+
+def test_shadow_lane_is_labelled_structurally_valid_and_defaults_off():
+    """Shadow does not lower any gate; it labels an experiment as paper-only."""
+    import main
+
+    assert config.PUBLISH_MODE in ("strict", "shadow"), "unknown lane"
+
+    captured = []
+
+    class FakeResponse:
+        status_code = 200
+        text = "ok"
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        captured.append(dict(json or {}))
+        return FakeResponse()
+
+    original_post = main.requests.post
+    main.requests.post = fake_post
+    try:
+        research = main.build_research("shadow", {"reasons": ["holdout t 0.4 < 1.96"]})
+        good = {"direction": "SHORT", "rsi_lower": 30.0, "rsi_upper": 62.0}
+        assert main.push_shadow("BTC/USDT", good, research) is True
+        # A structurally unusable candidate must never be published.
+        for bad in (None, {}, {"direction": "SIDEWAYS", "rsi_lower": 30, "rsi_upper": 62},
+                    {"direction": "LONG", "rsi_lower": 0.0, "rsi_upper": 100.0}):
+            assert main.push_shadow("BTC/USDT", bad, research) is False
+    finally:
+        main.requests.post = original_post
+
+    assert len(captured) == 1
+    payload = captured[0]
+    assert payload["mode"] == "shadow"
+    assert payload["research"]["status"] == "shadow"
+    assert payload["retired"] is False, "the executor downgrades it; the scanner does not fake retirement"
+    assert 0 < payload["rsi_upper"] < 100
+    # The two-switch contract: the scanner alone cannot enable trading.
+    assert payload["research"]["mode"] == "shadow"
+
+
+# ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
 def _run():

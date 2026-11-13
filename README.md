@@ -23,24 +23,42 @@ what was wrong, what changed, and what the measurements actually say.
 
 ## The contract with the executor
 
-The executor stores a strategy as five fields and ignores everything else:
+The executor stores the tradable part of a strategy in these fields:
 
 ```go
 type ActiveStrategy struct {
-    Symbol    string  // "BTCUSDT"
-    Direction string  // "LONG" | "SHORT" (BUY/SELL are normalised)
-    Leverage  string  // "3x"
-    RSILower  float64 // LONG arms when liveRSI <= RSILower
-    RSIUpper  float64 // SHORT arms when liveRSI >= RSIUpper
-    UpdatedAt string  // ISO-8601; must be fresh (48 h) or the row cannot arm
-    Retired   bool    // explicit retirement flag
+    Symbol       string            // "BTCUSDT"
+    Direction    string            // "LONG" | "SHORT" (BUY/SELL are normalised)
+    Leverage     string            // "3x"
+    RSILower     float64           // LONG arms when liveRSI <= RSILower
+    RSIUpper     float64           // SHORT arms when liveRSI >= RSIUpper
+    UpdatedAt    string            // ISO-8601; must be fresh (48 h) or the row cannot arm
+    Retired      bool              // explicit retirement flag
+    Mode         string            // "strict" | "shadow" — publication lane
+    Research     *StrategyResearch // diagnostic verdict, persisted as research_json
 }
 ```
 
-`encoding/json` silently drops unknown fields. That is the whole reason
-this service now searches only over `direction` and one RSI threshold:
-**anything the executor discards must not be in the search space**, or the
-backtest validates a robot that never runs.
+`Mode` and `Research` are **diagnostic**: they never change `CanArm()`.
+`encoding/json` still drops unknown fields, which is why this service only
+searches over `direction` and one RSI threshold: **anything the executor
+discards must not be in the search space**, or the backtest validates a robot
+that never runs.
+
+Every payload now carries `mode` plus a compact `research` verdict built by
+`build_research()`:
+
+| field | meaning |
+|---|---|
+| `status` | `winner`, `rejected`, `no_data` or `shadow` |
+| `reasons` | the binding gate failures, normalised so they aggregate across symbols |
+| `holdout_t` / `required_t` / `folds_pass` / `pooled_trades` | the numbers behind the verdict |
+| `best_candidate`, `exit_is_the_problem`, `data_bars` | what was tested and on how much data |
+| `scanned_at` | ISO-8601 scan time — the executor uses the newest of these to decide whether the cron is alive |
+
+The key is **omitted** when there is no verdict, so a bare legacy payload
+cannot wipe a row's previous research. The executor exposes the aggregate via
+`GET /api/research/status` and `research_status` in `/stats`.
 
 Two fields are part of the *safety* contract, not the signal:
 
@@ -175,6 +193,7 @@ needed room while the trail only arms at +3.0.
 | `AUTORESEARCH_RETIRE_FAILED` | `true` | push a retirement row for symbols that failed (including a failed data fetch) |
 | `AUTORESEARCH_FOLDS` | `5` | walk-forward folds inside the development set |
 | `AUTORESEARCH_INVERSION` | `true` | mirror the executor's trend inversion |
+| `AUTORESEARCH_MODE` | `strict` | `strict` publishes only validated winners; `shadow` also publishes the best **rejected** candidate as a labelled paper-only experiment. Never lowers a gate |
 
 ### How a retired symbol becomes armed again
 
@@ -196,8 +215,16 @@ the executor trades) and `XAUT-USDT` (a **spot** instrument), but there is no
 `XAUT-USDT-SWAP` — requesting its candles returns `51001`. The old
 `"XAUT/USDT"` entry therefore never fetched a single bar, hit the
 "no data, skipping" branch on every run, and no row was ever published for
-gold. `executor_symbol()` also collapses any legacy `XAUT*` spelling to
-`XAU*` so the duplicate database row cannot come back.
+gold.
+
+**`XAUTUSDT` is not a tradable pair.** `reject_untradable_pairs()` now raises
+on any `XAUTUSDT`, `XAUT/USDT`, `XAUT-USDT-SWAP` or `xaut/usdt:usdt` input,
+and the executor's `ValidateStrategyPayload()` rejects the same spellings
+with a `400`. Verified against the live OKX SWAP instrument list: 543
+instruments, the only gold one is `XAU-USDT-SWAP`, and there is no `XAUT-*`
+SWAP at all. `executor_symbol()` still collapses legacy `XAUT*` spellings to
+`XAU*`, but that is a **legacy data guard for historic DB/journal rows**, not
+a licence to publish `XAUT`.
 
 A failed data fetch is now treated as a retirement decision, not a silent
 skip: an unvalidated symbol must not keep trading on yesterday's row. The
@@ -218,8 +245,13 @@ python main.py --dry-run                 # search and report, publish nothing
 python main.py --dry-run --symbols BTC/USDT
 python main.py                           # publish to the executor
 
-python tests/test_pipeline.py            # 23 tests, no pytest needed
+python tests/test_pipeline.py            # 26 tests, no pytest needed
+python -m pytest tests/test_pipeline.py -q   # or via pytest
 python research/entry_vs_exit.py         # the entry-vs-exit decomposition
+
+# paper-only experiment lane (also requires SHADOW_TRADING_ENABLED=true
+# on the executor, otherwise the row is downgraded to a retirement marker)
+AUTORESEARCH_MODE=shadow python main.py --dry-run
 ```
 
 ### Verification (2026-11-09 audit)
@@ -227,9 +259,12 @@ python research/entry_vs_exit.py         # the entry-vs-exit decomposition
 | Check | Command | Result |
 |---|---|---|
 | Syntax | `python -m py_compile main.py config.py tests/test_pipeline.py` | ✅ |
-| Test suite | `python tests/test_pipeline.py` | ✅ `23/23 passed` |
+| Test suite | `python -m pytest tests/test_pipeline.py -q` | ✅ `26 passed` |
 | Payload contract | `test_payloads_express_retirement_and_re_arming_explicitly` | ✅ `retired` + fresh `updated_at` on both winner and retirement rows |
 | Gold instrument | `test_default_pairs_use_the_instrument_that_actually_exists` | ✅ `XAU/USDT`, `XAUT*` collapsed |
+| `XAUTUSDT` rejected | `test_xautusdt_is_not_a_tradable_pair` | ✅ all four spellings raise |
+| Telemetry on every row | `test_research_telemetry_travels_with_every_row` | ✅ bare payload omits `research`, defaults to `strict` |
+| Shadow lane | `test_shadow_lane_is_labelled_structurally_valid_and_defaults_off` | ✅ labelled, validated, off by default |
 | Executor parity | `test_rsi_matches_go`, `test_rsi_boundaries`, `test_simulate_stops_out_and_locks_profit` | ✅ |
 
 The runner in `tests/test_pipeline.py` needs **no pytest**. Local development
@@ -247,6 +282,50 @@ that re-scores the same market.
 **Run it daily**, and prefer to let the holdout move forward instead of
 re-using the same window. The cadence is configured in the Railway
 dashboard, not in this repository.
+
+---
+
+## When nothing passes the gate (two weeks, zero winners)
+
+This is the expected output of an honest search, not a failure of the cron.
+The engine evaluates 52 candidates (26 LONG + 26 SHORT) over a 180-day,
+15-minute sample with costs, the executor's entry filter, five walk-forward
+folds and a 25% holdout. A candidate must clear all of:
+
+| gate | value |
+|---|---|
+| development mean | > 0 |
+| holdout trades / mean | >= `MIN_VALIDATION_TRADES = 10`, mean > 0 |
+| holdout t-statistic | >= `MIN_T = 1.96` |
+| profitable folds | >= `REQUIRED_FOLD_PASS = 4` of 5 |
+| pooled OOS trades | >= `MIN_POOLED_TRADES = 40` |
+
+The saved `config/strategy_config.json` from the idle period shows BTC, ETH
+and SOL failing on negative development mean, negative holdout mean, t below
+required and too few profitable folds. Lowering any of these gates would
+publish a strategy that the backtest says loses money after costs.
+
+The old implementation published a **silent neutral tombstone** for each
+rejection, so "correct rejection" and "dead cron" looked identical from the
+outside. `main()` now:
+
+* attaches a `build_research()` verdict to `winner`, `rejected`, `no_data`
+  and `shadow` rows;
+* writes `mode` and the gate settings into `strategy_config.json`;
+* logs accepted / shadow / pushed / scanned counts per cycle.
+
+The executor's `/api/research/status` uses `scanned_at` to report
+`cron_healthy`, so a stale cron is visible immediately, and the dashboard's
+*Research Health* panel shows the binding reason on every inactive card.
+
+**Opt-in paper lane.** If the goal is to keep learning while real money stays
+flat, set `AUTORESEARCH_MODE=shadow` here **and**
+`SHADOW_TRADING_ENABLED=true` on the executor. `push_shadow()` publishes the
+best rejected candidate with a `shadow` status, real thresholds and
+`retired: false`, but only after a structural validation (direction is
+LONG/SHORT, arm threshold inside `(0, 100)`). It is not a winner, no gate is
+lowered, and the executor will not arm it for real OKX keys. Both switches
+default off; `strict` remains the production default.
 
 ---
 

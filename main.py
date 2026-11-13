@@ -18,9 +18,12 @@
 #      executor cannot even execute, and shipped it anyway.
 #
 #   4. Push a NEUTRAL row for every symbol that failed, so a stale
-#      strategy stops trading. The executor never expires a strategy
-#      of its own accord (GetActiveStrategies returns every row), so a
-#      symbol pushed once would otherwise keep trading forever.
+#      strategy stops trading, AND attach the research verdict (holdout
+#      t, fold count, rejection reasons) so the dashboard can explain
+#      WHY instead of showing a silent "Inactive" card.
+#
+#   5. In the opt-in shadow lane, publish the best available rejected
+#      candidate as an explicitly labelled, paper-only experiment.
 #
 # Nothing here invents a winner. A cycle that finds nothing says so.
 # --------------------------------------------------------------
@@ -66,6 +69,27 @@ DEFAULT_PAIRS = [
     "NEAR/USDT",
 ]
 
+# Verified against https://www.okx.com/api/v5/public/instruments?instType=SWAP
+# on 2026-11-13: 543 SWAP instruments, the ONLY gold perpetual is
+# XAU-USDT-SWAP, and there is no XAUT-* SWAP at all. XAUT-USDT is a SPOT
+# instrument. XAUTUSDT is therefore not a tradable pair on this executor and
+# must never be reintroduced through --symbols or AUTORESEARCH_SYMBOLS.
+def reject_untradable_pairs(symbols) -> list:
+    """Fail loudly instead of silently scanning a pair OKX cannot trade."""
+    out = []
+    for symbol in symbols:
+        compact = (
+            symbol.strip().upper()
+            .replace("/", "").replace("-", "").replace(":USDT", "")
+        )
+        if compact.startswith("XAUT"):
+            raise ValueError(
+                f"{symbol!r} is not an OKX futures pair. OKX lists only "
+                "XAU-USDT-SWAP for gold; use 'XAU/USDT' instead."
+            )
+        out.append(symbol)
+    return out
+
 
 # ------------------------------------------------------------------ utils
 def executor_symbol(symbol: str) -> str:
@@ -84,9 +108,10 @@ def executor_symbol(symbol: str) -> str:
     if cleaned.endswith("-SWAP"):
         cleaned = cleaned[: -len("-SWAP")]
     cleaned = cleaned.replace("/", "").replace("-", "")
-    # The executor canonicalises XAUT* -> XAU* because both spellings
-    # resolve to the same OKX perpetual. Normalise at the source too so a
-    # legacy --symbols override cannot resurrect the duplicate row.
+    # LEGACY DATA GUARD ONLY. Historic rows were written with both gold
+    # spellings; collapsing them here stops a duplicate row for one contract.
+    # It is NOT a licence to trade XAUT — reject_untradable_pairs() rejects
+    # that spelling before any cycle starts.
     if cleaned.startswith("XAUT"):
         cleaned = "XAU" + cleaned[len("XAUT"):]
     return cleaned
@@ -163,9 +188,54 @@ def webhook_url() -> str:
     return config.WEBHOOK_URL or DEFAULT_WEBHOOK_URL
 
 
+def build_research(status: str, report: dict = None, reasons=None) -> dict:
+    """The compact, machine-readable verdict the executor persists.
+
+    Before this existed the engine printed a detailed rejection to Railway
+    stdout and then published only a silent neutral tombstone. Two weeks of
+    correct "no edge" decisions were indistinguishable from a dead cron job.
+    Now every row carries the binding gate numbers with it, and /stats can
+    explain exactly why a symbol is inactive.
+    """
+    report = report or {}
+    holdout = report.get("holdout") or {}
+    params = report.get("params") or {}
+    if reasons is None:
+        reasons = report.get("reasons") or report.get("detail") or []
+    if isinstance(reasons, str):
+        reasons = [reasons]
+
+    best = ""
+    if params:
+        direction = str(params.get("direction", "?")).upper()
+        if direction == "LONG":
+            best = f"LONG rsi<={params.get('rsi_lower', 0):.0f}"
+        else:
+            best = f"SHORT rsi>={params.get('rsi_upper', 0):.0f}"
+
+    folds = report.get("folds") or []
+    return {
+        "status": status,
+        "mode": "shadow" if status == "shadow" else "strict",
+        "reasons": [str(r) for r in reasons][:6],
+        "holdout_n": int(holdout.get("n", 0) or 0),
+        "holdout_mean": round(float(holdout.get("mean", 0) or 0), 4),
+        "holdout_t": round(float(holdout.get("t_stat", 0) or 0), 4),
+        "required_t": round(float(report.get("required_t") or config.MIN_T), 4),
+        "folds_pass": int(report.get("folds_pass", 0) or 0),
+        "folds_total": len(folds) or config.N_FOLDS,
+        "pooled_trades": int(report.get("pooled_trades", 0) or 0),
+        "best_candidate": best,
+        "exit_is_the_problem": bool(report.get("exit_is_the_problem")),
+        "data_bars": int(report.get("bars", 0) or 0),
+        "scanned_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 def push_strategy(symbol: str, direction: str, rsi_lower: float, rsi_upper: float,
                   leverage: str = "3x", dry_run: bool = False,
-                  retired: bool = False) -> bool:
+                  retired: bool = False, research: dict = None,
+                  mode: str = None) -> bool:
     """Register (or replace) the strategy the executor will trade.
 
     The payload carries exactly the fields the executor's
@@ -194,7 +264,16 @@ def push_strategy(symbol: str, direction: str, rsi_lower: float, rsi_upper: floa
         "rsi_upper": float(rsi_upper),
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "retired": bool(retired),
+        # The lane is explicit on the wire. "strict" is a validated winner;
+        # "shadow" is a labelled paper-only experiment. The executor will
+        # downgrade a shadow row unless its own switch is also on.
+        "mode": mode or ("shadow" if (research or {}).get("status") == "shadow" else "strict"),
     }
+    # Diagnostic only — it never changes an arming decision. Omit the key
+    # entirely when there is no verdict so the executor keeps the row's
+    # previous research instead of overwriting it with an empty object.
+    if research is not None:
+        payload["research"] = research
 
     if dry_run:
         log(f"  [dry-run] would push {json.dumps(payload)} -> {url}")
@@ -217,7 +296,8 @@ def push_strategy(symbol: str, direction: str, rsi_lower: float, rsi_upper: floa
         return False
 
 
-def push_neutral(symbol: str, dry_run: bool = False) -> bool:
+def push_neutral(symbol: str, dry_run: bool = False,
+                 research: dict = None) -> bool:
     """Retire a strategy so the executor stops trading that symbol.
 
     Two things are pushed together, and both matter:
@@ -236,7 +316,34 @@ def push_neutral(symbol: str, dry_run: bool = False) -> bool:
     could never be relied on to block a position. The explicit flag is
     what makes the retirement safe.
     """
-    return push_strategy(symbol, "LONG", 0.0, 100.0, dry_run=dry_run, retired=True)
+    return push_strategy(symbol, "LONG", 0.0, 100.0, dry_run=dry_run,
+                         retired=True, research=research)
+
+
+def push_shadow(symbol: str, params: dict, research: dict,
+                dry_run: bool = False) -> bool:
+    """Publish the best available rejected candidate as a paper experiment.
+
+    This is the answer to "the bot did nothing for two weeks": on a paper
+    deployment, refusing to publish anything also refuses to collect the
+    forward data needed to improve. A shadow row is NOT a winner and is
+    labelled as such; the executor keeps it paper-only and refuses to arm it
+    at all unless SHADOW_TRADING_ENABLED=true is set there too.
+
+    The candidate is still structurally validated: a direction we do not
+    execute, or an arm threshold outside (0, 100), is never published.
+    """
+    if not params:
+        return False
+    direction = str(params.get("direction", "")).upper()
+    lower = float(params.get("rsi_lower", 0) or 0)
+    upper = float(params.get("rsi_upper", 0) or 0)
+    arm = lower if direction == "LONG" else upper
+    if direction not in ("LONG", "SHORT") or not (0 < arm < 100):
+        return False
+    return push_strategy(symbol, direction, lower, upper,
+                         dry_run=dry_run, retired=False,
+                         research=research, mode="shadow")
 
 
 # ------------------------------------------------------------------ state
@@ -269,14 +376,14 @@ def main() -> int:
     parser.add_argument("--symbols", help="comma separated list, overrides config")
     args = parser.parse_args()
 
-    symbols = (
+    symbols = reject_untradable_pairs(
         [s.strip() for s in args.symbols.split(",") if s.strip()]
         if args.symbols
         else (config.SYMBOLS or DEFAULT_PAIRS)
     )
 
     log("=" * 70)
-    log(f"autoresearch cycle | symbols={len(symbols)} | "
+    log(f"autoresearch cycle | mode={config.PUBLISH_MODE} | symbols={len(symbols)} | "
         f"{config.DATA_DAYS} days of {config.TIMEFRAME} ({config.DATA_BARS} bars)")
     log(f"candidates per fold = {26 + 26} | min holdout trades = "
         f"{config.MIN_VALIDATION_TRADES} | required t = {config.MIN_T}")
@@ -299,7 +406,13 @@ def main() -> int:
             # pushing a fresh winner payload with retired=False.
             log(f"  !! {symbol}: no data — cannot validate, retiring (not a winner)")
             if config.RETIRE_FAILED_SYMBOLS:
-                if push_neutral(symbol, dry_run=args.dry_run):
+                if push_neutral(
+                    symbol, dry_run=args.dry_run,
+                    research=build_research(
+                        "no_data",
+                        reasons=[f"{symbol}: OKX returned no usable 15m candles this cycle"],
+                    ),
+                ):
                     pushed += 1
             # Record the outcome either way: `len(decisions)` is reported as
             # "symbols scanned" and a failed feed must not silently vanish.
@@ -350,11 +463,31 @@ def main() -> int:
         if winner is None:
             reasons = report.get("reasons") or [report.get("detail", "unknown")]
             log(f"  REJECTED: {'; '.join(str(r) for r in reasons)}")
-            if config.RETIRE_FAILED_SYMBOLS:
-                if push_neutral(symbol, dry_run=args.dry_run):
+            published_status = "rejected"
+
+            # On a paper deployment, publishing nothing at all means the
+            # system never gathers forward evidence and can never improve.
+            # The shadow lane publishes the best available candidate with an
+            # explicit label. It changes NO statistical gate; a shadow row is
+            # still a rejected strategy, just one we are willing to observe.
+            if config.PUBLISH_MODE == "shadow" and params:
+                if push_shadow(symbol, params, build_research("shadow", report),
+                               dry_run=args.dry_run):
+                    pushed += 1
+                    published_status = "shadow"
+                    log(f"  SHADOW: paper-only candidate {params['direction']} "
+                        f"rsi_lower={params['rsi_lower']:.0f} "
+                        f"rsi_upper={params['rsi_upper']:.0f} "
+                        f"(gates NOT met — labelled as an experiment)")
+                else:
+                    log("  !! shadow candidate was not publishable, retiring instead")
+
+            if published_status == "rejected" and config.RETIRE_FAILED_SYMBOLS:
+                if push_neutral(symbol, dry_run=args.dry_run,
+                                research=build_research("rejected", report)):
                     pushed += 1
             decisions[symbol] = {
-                "status": "rejected",
+                "status": published_status,
                 "reasons": [str(r) for r in reasons],
                 "last_bar": last_bar,
                 "params": params,
@@ -370,6 +503,7 @@ def main() -> int:
             winner["rsi_lower"],
             winner["rsi_upper"],
             dry_run=args.dry_run,
+            research=build_research("winner", report),
         )
         if ok:
             pushed += 1
@@ -385,6 +519,15 @@ def main() -> int:
     save_state(
         {
             "updated_at": datetime.now(timezone.utc).isoformat(),
+            "mode": config.PUBLISH_MODE,
+            "gates": {
+                "min_t": config.MIN_T,
+                "required_fold_pass": config.REQUIRED_FOLD_PASS,
+                "n_folds": config.N_FOLDS,
+                "min_validation_trades": config.MIN_VALIDATION_TRADES,
+                "min_pooled_trades": config.MIN_POOLED_TRADES,
+                "fee_gross": config.FEE_GROSS,
+            },
             "decisions": decisions,
             "active": {
                 s: d["params"]
@@ -395,11 +538,14 @@ def main() -> int:
     )
 
     accepted = sum(1 for d in decisions.values() if d.get("status") == "accepted")
+    shadows = sum(1 for d in decisions.values() if d.get("status") == "shadow")
     log("=" * 70)
-    log(f"done | {accepted} accepted, {pushed} pushed, {len(decisions)} symbols scanned")
-    if accepted == 0:
+    log(f"done | mode={config.PUBLISH_MODE} | {accepted} accepted, {shadows} shadow, "
+        f"{pushed} pushed, {len(decisions)} symbols scanned")
+    if accepted == 0 and shadows == 0:
         log("NO STRATEGY PASSED THE GATES THIS CYCLE. Nothing was published.")
         log("That is the honest answer for this data, not a failure to run.")
+        log("Diagnostic telemetry went with every neutral row: see /api/research/status.")
     log("=" * 70)
     return 0
 
