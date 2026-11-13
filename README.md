@@ -354,6 +354,8 @@ describe an agent loop that was never wired into production.
 | `bd552b9` | Retirement uses an explicit `retired: true` flag, not just an unreachable threshold; winner payloads express `retired: false` + fresh `updated_at` |
 | `b2f3b98` | `DEFAULT_PAIRS` uses `XAU/USDT` (the OKX perpetual); `executor_symbol()` collapses `XAUT*` → `XAU*`; failed fetches retire the symbol and are always recorded in `decisions` |
 | `4ff5c1f` | Documentation brought in line with the executor's 48 h freshness gate, `retired` flag, webhook payload validation, single-writer trade journal and the full audit/verification matrix |
+| `4d81322` | Every published row carries a `research` verdict and `mode`; `reject_untradable_pairs()` rejects all `XAUT*` spellings; opt-in `AUTORESEARCH_MODE=shadow` paper lane; `26 passed` |
+| `b9b5d4c` | Executor counterpart: `research_json` persistence, `/api/research/status`, Research Health dashboard, `SHADOW_TRADING_ENABLED`, orphan stale-row reconciliation |
 
 Executor side (see `tethgard-multi-go/README.md`): the same audit fixed
 `POST /webhook/strategy` accepting junk payloads, corrected `.env.example`,
