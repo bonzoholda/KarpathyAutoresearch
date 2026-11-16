@@ -568,6 +568,72 @@ def test_shadow_lane_is_labelled_structurally_valid_and_defaults_off():
     assert payload["research"]["mode"] == "shadow"
 
 
+def test_observe_profile_never_publishes_a_confidently_losing_candidate():
+    """The real failure mode of the old shadow lane: picking the worst row."""
+    import main
+
+    losing = {
+        "params": {"direction": "SHORT", "rsi_lower": 30.0, "rsi_upper": 67.0},
+        "holdout": {"n": 80, "mean": -0.37, "t_stat": -2.5632},
+        "forward_best": {
+            "params": {"direction": "SHORT", "rsi_lower": 30.0, "rsi_upper": 67.0},
+            "holdout_forward": {"n": 80, "mean": -0.2, "t_stat": -1.1},
+        },
+        "pooled_trades": 248,
+        "folds_pass": 0,
+    }
+    assert main.observe_candidate(losing, "observe") is None
+    # A tiny OOS sample is never relaxed either.
+    thin = dict(losing, pooled_trades=12)
+    assert main.observe_candidate(thin, "observe") is None
+    # `strict` preserves the original unfiltered behaviour.
+    assert main.observe_candidate(losing, "strict")[0] == losing["params"]
+
+
+def test_observe_profile_prefers_positive_forward_edge():
+    """Only a positive exit-independent edge is eligible for observation."""
+    import main
+
+    report = {
+        "params": {"direction": "SHORT", "rsi_lower": 30.0, "rsi_upper": 78.0},
+        "holdout": {"n": 70, "mean": -0.28, "t_stat": -1.20},
+        "forward_best": {
+            "params": {"direction": "SHORT", "rsi_lower": 30.0, "rsi_upper": 59.0},
+            "holdout_forward": {"n": 60, "mean": 1.95, "t_stat": 2.84},
+        },
+        "pooled_trades": 388,
+        "folds_pass": 2,
+    }
+    params, basis = main.observe_candidate(report, "observe")
+    assert params["rsi_upper"] == 59.0, "must pick the forward candidate, not development best"
+    assert basis["basis"] == "positive_forward_edge"
+    assert basis["forward_t"] == 2.84
+
+
+def test_observe_profile_cannot_touch_real_money_gates():
+    """Relaxation lives only in the paper selection helper."""
+    import main
+
+    assert config.MIN_T == 1.96
+    assert config.REQUIRED_FOLD_PASS == 4
+    assert config.MIN_POOLED_TRADES == 40
+    assert config.MIN_VALIDATION_TRADES == 10
+    assert config.OBSERVE_MIN_T < config.MIN_T
+    assert config.OBSERVE_MIN_FOLDS < config.REQUIRED_FOLD_PASS
+
+    research = main.build_research("shadow", {
+        "forward_best": {
+            "params": {"direction": "LONG", "rsi_lower": 42.0, "rsi_upper": 70.0},
+            "holdout_forward": {"n": 40, "mean": 1.1, "t_stat": 2.1},
+            "holdout_ladder": {"mean": -0.3},
+        }
+    })
+    assert research["forward_best_candidate"] == "LONG rsi<=42"
+    assert research["forward_t"] == 2.1
+    assert research["ladder_mean"] == -0.3
+    assert research["gate_profile"] in ("strict", "observe")
+
+
 # ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------

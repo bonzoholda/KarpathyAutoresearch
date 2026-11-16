@@ -193,7 +193,10 @@ needed room while the trail only arms at +3.0.
 | `AUTORESEARCH_RETIRE_FAILED` | `true` | push a retirement row for symbols that failed (including a failed data fetch) |
 | `AUTORESEARCH_FOLDS` | `5` | walk-forward folds inside the development set |
 | `AUTORESEARCH_INVERSION` | `true` | mirror the executor's trend inversion |
-| `AUTORESEARCH_MODE` | `strict` | `strict` publishes only validated winners; `shadow` also publishes the best **rejected** candidate as a labelled paper-only experiment. Never lowers a gate |
+| `AUTORESEARCH_MODE` | `strict` | `strict` publishes only validated winners; `shadow` also publishes a **rejected** candidate as a labelled paper-only experiment. Never lowers a real-money gate |
+| `AUTORESEARCH_GATE_PROFILE` | `strict` | **Inert unless `AUTORESEARCH_MODE=shadow`.** `observe` adds a relaxed *eligibility* test for which rejected candidate the paper lane may publish. `find_winner()` and every real-money gate are untouched |
+| `AUTORESEARCH_OBSERVE_MIN_T` | `0.5` | Paper-lane only: minimum holdout t (or exit-independent forward t) for an observed candidate. Real `MIN_T` stays `1.96` |
+| `AUTORESEARCH_OBSERVE_MIN_FOLDS` | `1` | Paper-lane only: minimum profitable walk-forward folds. Real `REQUIRED_FOLD_PASS` stays `4` |
 
 ### How a retired symbol becomes armed again
 
@@ -245,7 +248,7 @@ python main.py --dry-run                 # search and report, publish nothing
 python main.py --dry-run --symbols BTC/USDT
 python main.py                           # publish to the executor
 
-python tests/test_pipeline.py            # 26 tests, no pytest needed
+python tests/test_pipeline.py            # 29 tests, no pytest needed
 python -m pytest tests/test_pipeline.py -q   # or via pytest
 python research/entry_vs_exit.py         # the entry-vs-exit decomposition
 
@@ -259,12 +262,15 @@ AUTORESEARCH_MODE=shadow python main.py --dry-run
 | Check | Command | Result |
 |---|---|---|
 | Syntax | `python -m py_compile main.py config.py tests/test_pipeline.py` | ✅ |
-| Test suite | `python -m pytest tests/test_pipeline.py -q` | ✅ `26 passed` |
+| Test suite | `python -m pytest tests/test_pipeline.py -q` | ✅ `29 passed` |
 | Payload contract | `test_payloads_express_retirement_and_re_arming_explicitly` | ✅ `retired` + fresh `updated_at` on both winner and retirement rows |
 | Gold instrument | `test_default_pairs_use_the_instrument_that_actually_exists` | ✅ `XAU/USDT`, `XAUT*` collapsed |
 | `XAUTUSDT` rejected | `test_xautusdt_is_not_a_tradable_pair` | ✅ all four spellings raise |
 | Telemetry on every row | `test_research_telemetry_travels_with_every_row` | ✅ bare payload omits `research`, defaults to `strict` |
 | Shadow lane | `test_shadow_lane_is_labelled_structurally_valid_and_defaults_off` | ✅ labelled, validated, off by default |
+| Observe profile | `test_observe_profile_never_publishes_a_confidently_losing_candidate` | ✅ negative-t candidates rejected, `strict` unchanged |
+| Observe selection | `test_observe_profile_prefers_positive_forward_edge` | ✅ forward candidate chosen over development best |
+| Real-gate immutability | `test_observe_profile_cannot_touch_real_money_gates` | ✅ `MIN_T=1.96`, folds `4`, pooled `40`, holdout `10` |
 | Executor parity | `test_rsi_matches_go`, `test_rsi_boundaries`, `test_simulate_stops_out_and_locks_profit` | ✅ |
 
 The runner in `tests/test_pipeline.py` needs **no pytest**. Local development
@@ -320,12 +326,40 @@ The executor's `/api/research/status` uses `scanned_at` to report
 
 **Opt-in paper lane.** If the goal is to keep learning while real money stays
 flat, set `AUTORESEARCH_MODE=shadow` here **and**
-`SHADOW_TRADING_ENABLED=true` on the executor. `push_shadow()` publishes the
-best rejected candidate with a `shadow` status, real thresholds and
+`SHADOW_TRADING_ENABLED=true` on the executor. `push_shadow()` publishes a
+rejected candidate with a `shadow` status, real thresholds and
 `retired: false`, but only after a structural validation (direction is
-LONG/SHORT, arm threshold inside `(0, 100)`). It is not a winner, no gate is
-lowered, and the executor will not arm it for real OKX keys. Both switches
-default off; `strict` remains the production default.
+LONG/SHORT, arm threshold inside `(0, 100)`). It is not a winner, no real-money
+gate is lowered, and the executor will not arm it for real OKX keys. Both
+switches default off; `strict` remains the production default.
+
+**Why `observe` profile was added (2026-11-16).** The original shadow lane
+blindly published `report["params"]` — the *development-window* best. On the
+live roster that meant XAU (holdout t **−2.56**), ADA (**−4.00**) and BNB
+(**−3.32**): reliably losing strategies were exactly the ones chosen for
+paper observation. `AUTORESEARCH_GATE_PROFILE=observe` changes only that
+selection step:
+
+1. require `pooled_trades >= 40` and `folds_pass >= 1` (the real floors of
+   40 trades / 4 folds are **not** relaxed);
+2. prefer the `forward_best` candidate when its exit-independent holdout
+   forward t >= `0.5` and mean > 0 — that is the one candidate whose weakness
+   could plausibly be the exit ladder rather than the signal;
+3. otherwise fall back to the development best only when its own holdout
+   t >= `0.5` **and** mean > 0;
+4. if neither qualifies, publish a neutral marker and say why.
+
+The chosen basis, forward t, forward mean and ladder mean are sent in the
+`research` verdict and stored by the executor. `observe` is inert in
+`strict` mode and cannot create a `winner`. Sample floors (`MIN_VALIDATION_TRADES`
+= 10, `MIN_POOLED_TRADES` = 40) are unchanged.
+
+**A 24–48 hour paper window is enough to test the execution plumbing, not to
+judge edge.** Most observed thresholds sit 4–29 RSI points away from the live
+reading, so a signal may not fire inside the window. The separate
+`research/smoke_publish.py` tool in the executor repo creates explicitly
+labelled `smoke_test` paper rows with thresholds next to the current RSI for
+exactly that purpose. See the executor README before using it.
 
 ---
 

@@ -184,3 +184,26 @@ RETIRE_FAILED_SYMBOLS = _bool("AUTORESEARCH_RETIRE_FAILED", True)
 PUBLISH_MODE = os.getenv("AUTORESEARCH_MODE", "strict").strip().lower()
 if PUBLISH_MODE not in ("strict", "shadow"):
     PUBLISH_MODE = "strict"
+
+# ------------------------------------------------- observation gate profile
+# `strict` (default) keeps the original shadow behaviour: publish whichever
+# candidate the development search selected, without applying any relaxed
+# criterion. `observe` adds an eligibility test for the PAPER lane only.
+#
+# CRITICAL: this profile is inert unless PUBLISH_MODE=shadow. find_winner()
+# and every real-money gate (MIN_T, REQUIRED_FOLD_PASS, MIN_POOLED_TRADES,
+# MIN_VALIDATION_TRADES) are NOT modified. Nothing here can produce a
+# "winner" or arm a real-money row.
+#
+# The relaxed bar still requires a POSITIVE exit-independent forward signal
+# and a non-trivial out-of-sample sample. It exists so a 24-48 h paper
+# observation can gather real execution evidence instead of publishing the
+# development-best candidate with a significantly NEGATIVE holdout t-stat.
+GATE_PROFILE = os.getenv("AUTORESEARCH_GATE_PROFILE", "strict").strip().lower()
+if GATE_PROFILE not in ("strict", "observe"):
+    GATE_PROFILE = "strict"
+
+# Relaxed ELIGIBILITY for the paper lane only. Sample floors are NOT relaxed:
+# 10+ holdout trades and 40+ pooled OOS trades still apply.
+OBSERVE_MIN_T = _float("AUTORESEARCH_OBSERVE_MIN_T", 0.5)
+OBSERVE_MIN_FOLDS = _int("AUTORESEARCH_OBSERVE_MIN_FOLDS", 1)

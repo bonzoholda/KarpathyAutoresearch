@@ -214,9 +214,22 @@ def build_research(status: str, report: dict = None, reasons=None) -> dict:
             best = f"SHORT rsi>={params.get('rsi_upper', 0):.0f}"
 
     folds = report.get("folds") or []
+    forward_best = report.get("forward_best") or {}
+    fwd = forward_best.get("holdout_forward") or {}
+    ladder = forward_best.get("holdout_ladder") or {}
+    fwd_params = forward_best.get("params") or {}
+    fwd_best = ""
+    if fwd_params:
+        direction = str(fwd_params.get("direction", "?")).upper()
+        if direction == "LONG":
+            fwd_best = f"LONG rsi<={fwd_params.get('rsi_lower', 0):.0f}"
+        else:
+            fwd_best = f"SHORT rsi>={fwd_params.get('rsi_upper', 0):.0f}"
+
     return {
         "status": status,
         "mode": "shadow" if status == "shadow" else "strict",
+        "gate_profile": config.GATE_PROFILE,
         "reasons": [str(r) for r in reasons][:6],
         "holdout_n": int(holdout.get("n", 0) or 0),
         "holdout_mean": round(float(holdout.get("mean", 0) or 0), 4),
@@ -226,10 +239,84 @@ def build_research(status: str, report: dict = None, reasons=None) -> dict:
         "folds_total": len(folds) or config.N_FOLDS,
         "pooled_trades": int(report.get("pooled_trades", 0) or 0),
         "best_candidate": best,
+        "forward_best_candidate": fwd_best,
+        "forward_mean": round(float(fwd.get("mean", 0) or 0), 4),
+        "forward_t": round(float(fwd.get("t_stat", 0) or 0), 4),
+        "ladder_mean": round(float(ladder.get("mean", 0) or 0), 4),
         "exit_is_the_problem": bool(report.get("exit_is_the_problem")),
         "data_bars": int(report.get("bars", 0) or 0),
         "scanned_at": datetime.now(timezone.utc).isoformat(),
     }
+
+
+def observe_candidate(report: dict, gate_profile: str = None):
+    """Pick a candidate for the PAPER observation lane, or return None.
+
+    The old shadow lane blindly published `report["params"]`, i.e. the
+    development-window best. On the live production data that meant XAU
+    (holdout t -2.56) and ADA (-4.00): reliably losing strategies were the
+    ones chosen to be traded. In `observe` profile we instead require a
+    POSITIVE exit-independent forward edge on the holdout, and fall back to
+    the development best only when its own holdout t clears the observe
+    floor. Real sample floors are NOT relaxed and real-money gates are NOT
+    touched — this function only decides which rejected row a paper account
+    may observe.
+
+    Returns (params, basis_dict) or None.
+    """
+    profile = gate_profile or config.GATE_PROFILE
+    params = report.get("params") or {}
+    if not params:
+        return None
+
+    # `strict` preserves the original, unfiltered shadow behaviour.
+    if profile != "observe":
+        return params, {"basis": "development_best"}
+
+    pooled = int(report.get("pooled_trades", 0) or 0)
+    folds_pass = int(report.get("folds_pass", 0) or 0)
+    if pooled < config.MIN_POOLED_TRADES:
+        return None
+    if folds_pass < config.OBSERVE_MIN_FOLDS:
+        return None
+
+    def describe(p, tag):
+        direction = str(p.get("direction", "?")).upper()
+        threshold = f"rsi<={p.get('rsi_lower', 0):.0f}" if direction == "LONG" \
+            else f"rsi>={p.get('rsi_upper', 0):.0f}"
+        return f"{direction} {threshold} ({tag})"
+
+    # Preferred: the candidate selected for its exit-independent forward
+    # edge. That is the only candidate whose weakness can plausibly be the
+    # exit ladder rather than the signal itself.
+    fb = report.get("forward_best") or {}
+    fwd = fb.get("holdout_forward") or {}
+    if fb.get("params") and int(fwd.get("n", 0) or 0) >= config.MIN_VALIDATION_TRADES:
+        ft = float(fwd.get("t_stat", 0) or 0)
+        fm = float(fwd.get("mean", 0) or 0)
+        if ft >= config.OBSERVE_MIN_T and fm > 0:
+            return fb["params"], {
+                "basis": "positive_forward_edge",
+                "candidate": describe(fb["params"], "forward"),
+                "forward_t": round(ft, 4),
+                "forward_mean": round(fm, 4),
+                "min_t": config.OBSERVE_MIN_T,
+            }
+
+    # Fallback: development best, but only if its own holdout is not
+    # significantly negative. Never publish a confidently losing candidate.
+    holdout = report.get("holdout") or {}
+    if int(holdout.get("n", 0) or 0) >= config.MIN_VALIDATION_TRADES:
+        ht = float(holdout.get("t_stat", 0) or 0)
+        hm = float(holdout.get("mean", 0) or 0)
+        if ht >= config.OBSERVE_MIN_T and hm > 0:
+            return params, {
+                "basis": "development_best_holdout",
+                "candidate": describe(params, "holdout"),
+                "holdout_t": round(ht, 4),
+                "min_t": config.OBSERVE_MIN_T,
+            }
+    return None
 
 
 def push_strategy(symbol: str, direction: str, rsi_lower: float, rsi_upper: float,
@@ -467,20 +554,38 @@ def main() -> int:
 
             # On a paper deployment, publishing nothing at all means the
             # system never gathers forward evidence and can never improve.
-            # The shadow lane publishes the best available candidate with an
-            # explicit label. It changes NO statistical gate; a shadow row is
-            # still a rejected strategy, just one we are willing to observe.
-            if config.PUBLISH_MODE == "shadow" and params:
-                if push_shadow(symbol, params, build_research("shadow", report),
+            # The shadow lane publishes a candidate with an explicit label.
+            # It changes NO real-money gate; a shadow row is still a rejected
+            # strategy, just one we are willing to observe.
+            shadow_pick = observe_candidate(report) if config.PUBLISH_MODE == "shadow" else None
+            observation_basis = None
+            if shadow_pick:
+                sparams, basis = shadow_pick
+                observation_basis = basis
+                shadow_research = build_research("shadow", report)
+                # Keep the wire type a plain string: the executor persists a
+                # struct field, and a nested object here would fail JSON
+                # binding and reject the whole payload.
+                basis_text = str(basis.get("basis", "unknown"))
+                if basis.get("candidate"):
+                    basis_text += f": {basis['candidate']}"
+                if basis.get("forward_t") is not None:
+                    basis_text += f" (forward_t={basis['forward_t']})"
+                shadow_research["observation_basis"] = basis_text
+                note = "PAPER OBSERVATION ONLY — not a validated winner; " + basis_text
+                shadow_research["reasons"] = [note] + shadow_research["reasons"]
+                if push_shadow(symbol, sparams, shadow_research,
                                dry_run=args.dry_run):
                     pushed += 1
                     published_status = "shadow"
-                    log(f"  SHADOW: paper-only candidate {params['direction']} "
-                        f"rsi_lower={params['rsi_lower']:.0f} "
-                        f"rsi_upper={params['rsi_upper']:.0f} "
-                        f"(gates NOT met — labelled as an experiment)")
+                    log(f"  SHADOW: paper-only candidate {sparams['direction']} "
+                        f"rsi_lower={sparams['rsi_lower']:.0f} "
+                        f"rsi_upper={sparams['rsi_upper']:.0f} | {note}")
                 else:
                     log("  !! shadow candidate was not publishable, retiring instead")
+            elif config.PUBLISH_MODE == "shadow":
+                log("  !! no rejected candidate meets the observe floor — "
+                    f"profile={config.GATE_PROFILE}; publishing a neutral marker")
 
             if published_status == "rejected" and config.RETIRE_FAILED_SYMBOLS:
                 if push_neutral(symbol, dry_run=args.dry_run,
@@ -492,6 +597,7 @@ def main() -> int:
                 "last_bar": last_bar,
                 "params": params,
                 "holdout": holdout,
+                "observation_basis": observation_basis,
             }
             continue
 
@@ -520,6 +626,7 @@ def main() -> int:
         {
             "updated_at": datetime.now(timezone.utc).isoformat(),
             "mode": config.PUBLISH_MODE,
+            "gate_profile": config.GATE_PROFILE,
             "gates": {
                 "min_t": config.MIN_T,
                 "required_fold_pass": config.REQUIRED_FOLD_PASS,
@@ -527,6 +634,9 @@ def main() -> int:
                 "min_validation_trades": config.MIN_VALIDATION_TRADES,
                 "min_pooled_trades": config.MIN_POOLED_TRADES,
                 "fee_gross": config.FEE_GROSS,
+                # Paper-lane eligibility only. Inert for real money.
+                "observe_min_t": config.OBSERVE_MIN_T,
+                "observe_min_folds": config.OBSERVE_MIN_FOLDS,
             },
             "decisions": decisions,
             "active": {
