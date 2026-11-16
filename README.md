@@ -390,6 +390,8 @@ describe an agent loop that was never wired into production.
 | `4ff5c1f` | Documentation brought in line with the executor's 48 h freshness gate, `retired` flag, webhook payload validation, single-writer trade journal and the full audit/verification matrix |
 | `4d81322` | Every published row carries a `research` verdict and `mode`; `reject_untradable_pairs()` rejects all `XAUT*` spellings; opt-in `AUTORESEARCH_MODE=shadow` paper lane; `26 passed` |
 | `b9b5d4c` | Executor counterpart: `research_json` persistence, `/api/research/status`, Research Health dashboard, `SHADOW_TRADING_ENABLED`, orphan stale-row reconciliation |
+| `12de436` | Observe gate profile for the paper lane; negative-t candidates are refused, positive forward edge preferred; forward metrics in telemetry; `29 passed` |
+| `9284d09` | Executor counterpart: labelled paper smoke publisher, fee-drag checker, observe telemetry persistence and dashboard badge |
 
 Executor side (see `tethgard-multi-go/README.md`): the same audit fixed
 `POST /webhook/strategy` accepting junk payloads, corrected `.env.example`,
