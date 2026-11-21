@@ -1,0 +1,420 @@
+[
+  {
+    "timeframe": "15m",
+    "wins": [],
+    "results": [
+      {
+        "symbol": "BTC/USDT",
+        "status": "reject",
+        "t": 0.05,
+        "mean": 0.012,
+        "n": 69,
+        "folds": "1/5",
+        "pooled": 221,
+        "best": {
+          "direction": "SHORT",
+          "rsi_lower": 30.0,
+          "rsi_upper": 65.0
+        },
+        "reasons": [
+          "development mean is -0.22 gross (not positive)",
+          "holdout t 0.05 < required 1.96"
+        ]
+      },
+      {
+        "symbol": "ETH/USDT",
+        "status": "reject",
+        "t": -5.34,
+        "mean": -1.039,
+        "n": 150,
+        "folds": "2/5",
+        "pooled": 275,
+        "best": {
+          "direction": "LONG",
+          "rsi_lower": 42.0,
+          "rsi_upper": 70.0
+        },
+        "reasons": [
+          "development mean is -0.18 gross (not positive)",
+          "holdout mean is -1.04 gross (not positive)"
+        ]
+      },
+      {
+        "symbol": "SOL/USDT",
+        "status": "reject",
+        "t": 0.336,
+        "mean": 0.11,
+        "n": 54,
+        "folds": "0/5",
+        "pooled": 284,
+        "best": {
+          "direction": "SHORT",
+          "rsi_lower": 30.0,
+          "rsi_upper": 66.0
+        },
+        "reasons": [
+          "development mean is -0.32 gross (not positive)",
+          "holdout t 0.34 < required 1.96"
+        ]
+      },
+      {
+        "symbol": "XRP/USDT",
+        "status": "reject",
+        "t": 0.584,
+        "mean": 0.222,
+        "n": 48,
+        "folds": "1/5",
+        "pooled": 150,
+        "best": {
+          "direction": "SHORT",
+          "rsi_lower": 30.0,
+          "rsi_upper": 70.0
+        },
+        "reasons": [
+          "development mean is -0.13 gross (not positive)",
+          "holdout t 0.58 < required 1.96"
+        ]
+      },
+      {
+        "symbol": "BNB/USDT",
+        "status": "reject",
+        "t": -3.522,
+        "mean": -0.784,
+        "n": 123,
+        "folds": "2/5",
+        "pooled": 268,
+        "best": {
+          "direction": "LONG",
+          "rsi_lower": 30.0,
+          "rsi_upper": 70.0
+        },
+        "reasons": [
+          "development mean is -0.20 gross (not positive)",
+          "holdout mean is -0.78 gross (not positive)"
+        ]
+      },
+      {
+        "symbol": "DOGE/USDT",
+        "status": "reject",
+        "t": -1.673,
+        "mean": -0.607,
+        "n": 51,
+        "folds": "1/5",
+        "pooled": 178,
+        "best": {
+          "direction": "SHORT",
+          "rsi_lower": 30.0,
+          "rsi_upper": 66.0
+        },
+        "reasons": [
+          "development mean is -0.35 gross (not positive)",
+          "holdout mean is -0.61 gross (not positive)"
+        ]
+      },
+      {
+        "symbol": "ADA/USDT",
+        "status": "reject",
+        "t": -3.52,
+        "mean": -0.932,
+        "n": 98,
+        "folds": "2/5",
+        "pooled": 177,
+        "best": {
+          "direction": "LONG",
+          "rsi_lower": 24.0,
+          "rsi_upper": 70.0
+        },
+        "reasons": [
+          "development mean is -0.30 gross (not positive)",
+          "holdout mean is -0.93 gross (not positive)"
+        ]
+      },
+      {
+        "symbol": "AVAX/USDT",
+        "status": "reject",
+        "t": -1.263,
+        "mean": -0.309,
+        "n": 104,
+        "folds": "1/5",
+        "pooled": 368,
+        "best": {
+          "direction": "SHORT",
+          "rsi_lower": 30.0,
+          "rsi_upper": 59.0
+        },
+        "reasons": [
+          "holdout mean is -0.31 gross (not positive)",
+          "holdout t -1.26 < required 1.96"
+        ]
+      },
+      {
+        "symbol": "NEAR/USDT",
+        "status": "reject",
+        "t": -2.919,
+        "mean": -0.675,
+        "n": 116,
+        "folds": "2/5",
+        "pooled": 403,
+        "best": {
+          "direction": "SHORT",
+          "rsi_lower": 30.0,
+          "rsi_upper": 62.0
+        },
+        "reasons": [
+          "development mean is -0.00 gross (not positive)",
+          "holdout mean is -0.68 gross (not positive)"
+        ]
+      },
+      {
+        "symbol": "SUI/USDT",
+        "status": "reject",
+        "t": -0.227,
+        "mean": -0.092,
+        "n": 49,
+        "folds": "2/5",
+        "pooled": 279,
+        "best": {
+          "direction": "SHORT",
+          "rsi_lower": 30.0,
+          "rsi_upper": 66.0
+        },
+        "reasons": [
+          "development mean is -0.16 gross (not positive)",
+          "holdout mean is -0.09 gross (not positive)"
+        ]
+      },
+      {
+        "symbol": "XAU/USDT",
+        "status": "reject",
+        "t": -2.53,
+        "mean": -0.374,
+        "n": 89,
+        "folds": "1/5",
+        "pooled": 237,
+        "best": {
+          "direction": "SHORT",
+          "rsi_lower": 30.0,
+          "rsi_upper": 67.0
+        },
+        "reasons": [
+          "development mean is -0.11 gross (not positive)",
+          "holdout mean is -0.37 gross (not positive)"
+        ]
+      }
+    ]
+  },
+  {
+    "timeframe": "1h",
+    "wins": [],
+    "results": [
+      {
+        "symbol": "BTC/USDT",
+        "status": "reject",
+        "t": 0.0,
+        "mean": 0.0,
+        "n": 0,
+        "folds": "0/3",
+        "pooled": 0,
+        "best": {
+          "direction": "SHORT",
+          "rsi_lower": 30.0,
+          "rsi_upper": 62.0
+        },
+        "reasons": [
+          "holdout has only 0 trades (need 10)",
+          "holdout mean is 0.00 gross (not positive)"
+        ]
+      },
+      {
+        "symbol": "ETH/USDT",
+        "status": "reject",
+        "t": 0.0,
+        "mean": 0.0,
+        "n": 0,
+        "folds": "0/3",
+        "pooled": 0,
+        "best": {
+          "direction": "SHORT",
+          "rsi_lower": 30.0,
+          "rsi_upper": 62.0
+        },
+        "reasons": [
+          "holdout has only 0 trades (need 10)",
+          "holdout mean is 0.00 gross (not positive)"
+        ]
+      },
+      {
+        "symbol": "SOL/USDT",
+        "status": "reject",
+        "t": 1.108,
+        "mean": 2.464,
+        "n": 2,
+        "folds": "0/3",
+        "pooled": 0,
+        "best": {
+          "direction": "SHORT",
+          "rsi_lower": 30.0,
+          "rsi_upper": 56.0
+        },
+        "reasons": [
+          "holdout has only 2 trades (need 10)",
+          "holdout t 1.11 < required 1.96"
+        ]
+      },
+      {
+        "symbol": "XRP/USDT",
+        "status": "reject",
+        "t": 0.261,
+        "mean": 1.184,
+        "n": 2,
+        "folds": "0/3",
+        "pooled": 0,
+        "best": {
+          "direction": "SHORT",
+          "rsi_lower": 30.0,
+          "rsi_upper": 58.0
+        },
+        "reasons": [
+          "holdout has only 2 trades (need 10)",
+          "holdout t 0.26 < required 1.96"
+        ]
+      },
+      {
+        "symbol": "BNB/USDT",
+        "status": "reject",
+        "t": 0.0,
+        "mean": 0.24,
+        "n": 1,
+        "folds": "0/3",
+        "pooled": 0,
+        "best": {
+          "direction": "SHORT",
+          "rsi_lower": 30.0,
+          "rsi_upper": 57.0
+        },
+        "reasons": [
+          "holdout has only 1 trades (need 10)",
+          "holdout t 0.00 < required 1.96"
+        ]
+      },
+      {
+        "symbol": "DOGE/USDT",
+        "status": "reject",
+        "t": 0.0,
+        "mean": 4.899,
+        "n": 1,
+        "folds": "0/3",
+        "pooled": 0,
+        "best": {
+          "direction": "SHORT",
+          "rsi_lower": 30.0,
+          "rsi_upper": 58.0
+        },
+        "reasons": [
+          "holdout has only 1 trades (need 10)",
+          "holdout t 0.00 < required 1.96"
+        ]
+      },
+      {
+        "symbol": "ADA/USDT",
+        "status": "reject",
+        "t": 0.0,
+        "mean": 0.225,
+        "n": 1,
+        "folds": "0/3",
+        "pooled": 0,
+        "best": {
+          "direction": "SHORT",
+          "rsi_lower": 30.0,
+          "rsi_upper": 55.0
+        },
+        "reasons": [
+          "holdout has only 1 trades (need 10)",
+          "holdout t 0.00 < required 1.96"
+        ]
+      },
+      {
+        "symbol": "AVAX/USDT",
+        "status": "reject",
+        "t": 2.151,
+        "mean": 4.181,
+        "n": 2,
+        "folds": "0/3",
+        "pooled": 0,
+        "best": {
+          "direction": "SHORT",
+          "rsi_lower": 30.0,
+          "rsi_upper": 55.0
+        },
+        "reasons": [
+          "holdout has only 2 trades (need 10)",
+          "only 0/3 walk-forward folds were profitable (need 4)"
+        ]
+      },
+      {
+        "symbol": "NEAR/USDT",
+        "status": "reject",
+        "t": -0.425,
+        "mean": -1.003,
+        "n": 4,
+        "folds": "0/3",
+        "pooled": 0,
+        "best": {
+          "direction": "LONG",
+          "rsi_lower": 31.0,
+          "rsi_upper": 70.0
+        },
+        "reasons": [
+          "holdout has only 4 trades (need 10)",
+          "holdout mean is -1.00 gross (not positive)"
+        ]
+      },
+      {
+        "symbol": "SUI/USDT",
+        "status": "reject",
+        "t": 0.0,
+        "mean": -3.366,
+        "n": 1,
+        "folds": "0/3",
+        "pooled": 0,
+        "best": {
+          "direction": "LONG",
+          "rsi_lower": 20.0,
+          "rsi_upper": 70.0
+        },
+        "reasons": [
+          "development mean is -0.04 gross (not positive)",
+          "holdout has only 1 trades (need 10)"
+        ]
+      },
+      {
+        "symbol": "XAU/USDT",
+        "status": "reject",
+        "t": 0.0,
+        "mean": 0.0,
+        "n": 0,
+        "folds": "0/2",
+        "pooled": 0,
+        "best": {
+          "direction": "SHORT",
+          "rsi_lower": 30.0,
+          "rsi_upper": 64.0
+        },
+        "reasons": [
+          "holdout has only 0 trades (need 10)",
+          "holdout mean is 0.00 gross (not positive)"
+        ]
+      }
+    ]
+  },
+  {
+    "timeframe": "4h",
+    "wins": [],
+    "results": []
+  },
+  {
+    "timeframe": "1d",
+    "wins": [],
+    "results": []
+  }
+]

@@ -363,6 +363,21 @@ exactly that purpose. See the executor README before using it.
 
 ---
 
+## Timeframe study (2026-11-21)
+
+`research/timeframe_study.py` re-ran the exact engine and gates at 15m, 1h,
+4h and 1d over 180 days of OKX data for all 11 production symbols. **Zero
+winners at every timeframe.** The apparent high t-statistics (1h AVAX 2.15,
+4h ADA 2.68) came from 2 and 13 trades respectively — below the 10-trade
+holdout floor, with 0 profitable folds. At 1d there are not even enough bars
+to form folds.
+
+Conclusion: the binding constraint is the **signal design**, not the candle
+timeframe or the gate threshold. RSI-threshold + 2-point reversal + ADX/EMA200
+filter against a 3% gross stop has no measurable edge in this period. Lowering
+gates would arm strategies whose own out-of-sample data says they lose.
+Full write-up: `research/TIMEFRAME_STUDY.md`.
+
 ## Files
 
 | file | role |
