@@ -378,6 +378,15 @@ filter against a 3% gross stop has no measurable edge in this period. Lowering
 gates would arm strategies whose own out-of-sample data says they lose.
 Full write-up: `research/TIMEFRAME_STUDY.md`.
 
+## New signal family study (2026-11-21)
+
+ backtested four alternative signal families
+(EMA cross + ADX, Donchian breakout + volume, volume + RSI, momentum ROC)
+under the same gates and exit ladder. 176 comparisons; **0 honest winners**.
+The one in-sample survivor (NEAR/SHORT momentum, t 2.23) collapsed to t 0.42
+on the held-out window with 2/5 profitable folds — a selection-bias artifact.
+See . No production code was changed.
+
 ## Files
 
 | file | role |
