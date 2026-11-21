@@ -1,0 +1,206 @@
+[
+  {
+    "family": "ema_cross",
+    "params": {
+      "fast": 9,
+      "slow": 21,
+      "adx_min": 20
+    },
+    "wins": 0,
+    "best": {
+      "symbol": "BTC/USDT",
+      "family": "ema_cross",
+      "params": {
+        "fast": 9,
+        "slow": 21,
+        "adx_min": 20
+      },
+      "direction": "SHORT",
+      "n": 139,
+      "mean": -0.044877178249686095,
+      "std": 2.1070600055430506,
+      "t_stat": -0.25110539189328424,
+      "win_rate": 0.60431654676259,
+      "total": -6.237927776706368,
+      "profit_factor": 0.9480900921549368,
+      "entries": 139
+    }
+  },
+  {
+    "family": "ema_cross",
+    "params": {
+      "fast": 20,
+      "slow": 50,
+      "adx_min": 25
+    },
+    "wins": 0,
+    "best": {
+      "symbol": "ETH/USDT",
+      "family": "ema_cross",
+      "params": {
+        "fast": 20,
+        "slow": 50,
+        "adx_min": 25
+      },
+      "direction": "SHORT",
+      "n": 21,
+      "mean": 1.243221978234303,
+      "std": 3.7422745632221632,
+      "t_stat": 1.5223786295322177,
+      "win_rate": 0.7142857142857143,
+      "total": 26.107661542920365,
+      "profit_factor": 3.078550007098894,
+      "entries": 21
+    }
+  },
+  {
+    "family": "breakout",
+    "params": {
+      "lookback": 20,
+      "vol_mult": 1.5
+    },
+    "wins": 0,
+    "best": {
+      "symbol": "AVAX/USDT",
+      "family": "breakout",
+      "params": {
+        "lookback": 20,
+        "vol_mult": 1.5
+      },
+      "direction": "SHORT",
+      "n": 414,
+      "mean": -0.003147480064677935,
+      "std": 3.1237154245577816,
+      "t_stat": -0.02050178602646844,
+      "win_rate": 0.6135265700483091,
+      "total": -1.3030567467766652,
+      "profit_factor": 0.9974171494446347,
+      "entries": 414
+    }
+  },
+  {
+    "family": "breakout",
+    "params": {
+      "lookback": 10,
+      "vol_mult": 2.0
+    },
+    "wins": 0,
+    "best": {
+      "symbol": "AVAX/USDT",
+      "family": "breakout",
+      "params": {
+        "lookback": 10,
+        "vol_mult": 2.0
+      },
+      "direction": "SHORT",
+      "n": 375,
+      "mean": 0.013185655076999155,
+      "std": 3.173740436049874,
+      "t_stat": 0.08045368477835169,
+      "win_rate": 0.6186666666666667,
+      "total": 4.944620653874683,
+      "profit_factor": 1.0107490148728138,
+      "entries": 375
+    }
+  },
+  {
+    "family": "volume_rsi",
+    "params": {
+      "vol_mult": 1.5,
+      "rsi_thresh": 55
+    },
+    "wins": 0,
+    "best": {
+      "symbol": "NEAR/USDT",
+      "family": "volume_rsi",
+      "params": {
+        "vol_mult": 1.5,
+        "rsi_thresh": 55
+      },
+      "direction": "LONG",
+      "n": 757,
+      "mean": -0.053325870204670306,
+      "std": 3.1353777330241757,
+      "t_stat": -0.46794630386356756,
+      "win_rate": 0.607661822985469,
+      "total": -40.36768374493542,
+      "profit_factor": 0.9590463795458143,
+      "entries": 757
+    }
+  },
+  {
+    "family": "volume_rsi",
+    "params": {
+      "vol_mult": 2.0,
+      "rsi_thresh": 60
+    },
+    "wins": 0,
+    "best": {
+      "symbol": "XRP/USDT",
+      "family": "volume_rsi",
+      "params": {
+        "vol_mult": 2.0,
+        "rsi_thresh": 60
+      },
+      "direction": "SHORT",
+      "n": 297,
+      "mean": -0.022038532955994103,
+      "std": 2.601685247051316,
+      "t_stat": -0.14598429999976542,
+      "win_rate": 0.6531986531986532,
+      "total": -6.545444287930248,
+      "profit_factor": 0.9778214407427351,
+      "entries": 297
+    }
+  },
+  {
+    "family": "momentum",
+    "params": {
+      "lookback": 10,
+      "pct": 2.0
+    },
+    "wins": 0,
+    "best": {
+      "symbol": "XAU/USDT",
+      "family": "momentum",
+      "params": {
+        "lookback": 10,
+        "pct": 2.0
+      },
+      "direction": "LONG",
+      "n": 5,
+      "mean": 1.3164783906992343,
+      "std": 1.180326871852361,
+      "t_stat": 2.493999961123673,
+      "win_rate": 1.0,
+      "total": 6.582391953496172,
+      "profit_factor": 0.0,
+      "entries": 5
+    }
+  },
+  {
+    "family": "momentum",
+    "params": {
+      "lookback": 20,
+      "pct": 4.0
+    },
+    "wins": 1,
+    "best": {
+      "symbol": "NEAR/USDT",
+      "family": "momentum",
+      "params": {
+        "lookback": 20,
+        "pct": 4.0
+      },
+      "direction": "SHORT",
+      "n": 348,
+      "mean": 0.4163487399536167,
+      "std": 3.4770651380072373,
+      "t_stat": 2.2337473482299792,
+      "win_rate": 0.6494252873563219,
+      "total": 144.88936150385862,
+      "profit_factor": 1.3534223990443728,
+      "entries": 348
+    }
+  }
+]
