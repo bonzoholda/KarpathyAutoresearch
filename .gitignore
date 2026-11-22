@@ -22,6 +22,14 @@ dev/
 # Results file
 results.tsv
 
+# Research data caches (re-fetchable from OKX; large binaries)
+*.pkl
+
+# Funding observation lane runtime state
+alpha_funding/state.json
+alpha_funding/signals.jsonl
+alpha_funding/cron.log
+
 # Runtime state: the decision of the last cycle. It changes on every
 # cron run, so it does not belong in version control. The Railway
 # logs carry the same information.

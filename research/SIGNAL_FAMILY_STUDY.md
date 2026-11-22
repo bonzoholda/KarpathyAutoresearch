@@ -60,8 +60,19 @@ volatility names, different sessions), a different execution style
 (maker entries, wider ATR-normalised stops), or a non-price signal. Those
 are separate, larger research projects and none is guaranteed to work.
 
+## Follow-up (22 Nov 2026)
+
+`research/COMBINED_LANE_STUDY.md` answers whether a trend lane can be combined
+with the existing RSI lane. Twelve pre-registered trend candidates were
+selected on development only and scored once on holdout: the best dev t was
+1.137 (below the naive 1.96), and on holdout it collapsed to t −5.815. The
+regime-gated combination remained loss-making (t −7.811). There is currently
+no holdout-passing trend signal to combine.
+
 ## Files
 
+- `research/combined_lane_study.py` — pre-registered combined-lane test
+- `research/combined_lane_results.json` — combined-lane results
 - `research/signal_family_study.py` — broad sweep
 - `research/signal_family_results.json` — raw sweep output
 - `research/validate_momentum.py` — honest holdout validation

@@ -1,0 +1,282 @@
+{
+  "variants": 48,
+  "critical_t": {
+    "naive": 1.959963986120195,
+    "bonferroni": 3.088305612664273
+  },
+  "eligible": 1,
+  "winner": {
+    "name": "lk24_rb72_k5_momentum_voladj",
+    "params": {
+      "lookback": 24,
+      "rebalance": 72,
+      "topk": 5,
+      "mode": "momentum",
+      "norm": "voladj"
+    },
+    "dev": {
+      "n": 910,
+      "mean": 0.22806495904511478,
+      "std": 19.898928341698607,
+      "t_stat": 0.34573995526983387,
+      "win_rate": 0.5285714285714286,
+      "total": 207.53911273105444,
+      "profit_factor": 1.0326596726630801
+    },
+    "folds_positive": 4
+  },
+  "holdout": {
+    "n": 310,
+    "mean": -0.6057922916713903,
+    "std": 24.022577243880882,
+    "t_stat": -0.44400206636362416,
+    "win_rate": 0.5032258064516129,
+    "total": -187.795610418131,
+    "profit_factor": 0.9252687569359153
+  },
+  "passes_naive": false,
+  "passes_bonferroni": false,
+  "all_scores": [
+    {
+      "name": "lk72_rb24_k3_momentum_raw",
+      "params": {
+        "lookback": 72,
+        "rebalance": 24,
+        "topk": 3,
+        "mode": "momentum",
+        "norm": "raw"
+      },
+      "dev": {
+        "n": 1626,
+        "mean": 0.37608802073618186,
+        "std": 12.142789026866131,
+        "t_stat": 1.2489105133015406,
+        "win_rate": 0.504920049200492,
+        "total": 611.5191217170317,
+        "profit_factor": 1.0941749525593345
+      },
+      "folds_positive": 3
+    },
+    {
+      "name": "lk72_rb72_k5_momentum_voladj",
+      "params": {
+        "lookback": 72,
+        "rebalance": 72,
+        "topk": 5,
+        "mode": "momentum",
+        "norm": "voladj"
+      },
+      "dev": {
+        "n": 910,
+        "mean": 0.837669405506375,
+        "std": 20.254142162253817,
+        "t_stat": 1.2476118642838097,
+        "win_rate": 0.5241758241758242,
+        "total": 762.2791590108013,
+        "profit_factor": 1.1263348694491393
+      },
+      "folds_positive": 3
+    },
+    {
+      "name": "lk24_rb24_k3_momentum_voladj",
+      "params": {
+        "lookback": 24,
+        "rebalance": 24,
+        "topk": 3,
+        "mode": "momentum",
+        "norm": "voladj"
+      },
+      "dev": {
+        "n": 1638,
+        "mean": 0.2803722116280292,
+        "std": 11.17649151712528,
+        "t_stat": 1.0152813844937933,
+        "win_rate": 0.4902319902319902,
+        "total": 459.2496826467119,
+        "profit_factor": 1.075992416405472
+      },
+      "folds_positive": 2
+    },
+    {
+      "name": "lk72_rb72_k3_momentum_voladj",
+      "params": {
+        "lookback": 72,
+        "rebalance": 72,
+        "topk": 3,
+        "mode": "momentum",
+        "norm": "voladj"
+      },
+      "dev": {
+        "n": 546,
+        "mean": 0.7569932829983109,
+        "std": 21.117305312644607,
+        "t_stat": 0.8376254191953338,
+        "win_rate": 0.5274725274725275,
+        "total": 413.31833251707775,
+        "profit_factor": 1.1093913566474178
+      },
+      "folds_positive": 2
+    },
+    {
+      "name": "lk72_rb72_k3_momentum_raw",
+      "params": {
+        "lookback": 72,
+        "rebalance": 72,
+        "topk": 3,
+        "mode": "momentum",
+        "norm": "raw"
+      },
+      "dev": {
+        "n": 546,
+        "mean": 0.6438276502718018,
+        "std": 21.94699909382515,
+        "t_stat": 0.6854737052204662,
+        "win_rate": 0.5164835164835165,
+        "total": 351.52989704840377,
+        "profit_factor": 1.0869207720139489
+      },
+      "folds_positive": 3
+    },
+    {
+      "name": "lk72_rb24_k3_momentum_voladj",
+      "params": {
+        "lookback": 72,
+        "rebalance": 24,
+        "topk": 3,
+        "mode": "momentum",
+        "norm": "voladj"
+      },
+      "dev": {
+        "n": 1626,
+        "mean": 0.14447753395519247,
+        "std": 11.661769994258952,
+        "t_stat": 0.4995697341348162,
+        "win_rate": 0.4920049200492005,
+        "total": 234.92047021114294,
+        "profit_factor": 1.0370118957423187
+      },
+      "folds_positive": 3
+    },
+    {
+      "name": "lk8_rb72_k5_momentum_raw",
+      "params": {
+        "lookback": 8,
+        "rebalance": 72,
+        "topk": 5,
+        "mode": "momentum",
+        "norm": "raw"
+      },
+      "dev": {
+        "n": 920,
+        "mean": 0.2722928493078331,
+        "std": 19.974623695112935,
+        "t_stat": 0.4134771782684185,
+        "win_rate": 0.5021739130434782,
+        "total": 250.50942136320646,
+        "profit_factor": 1.0392901429918915
+      },
+      "folds_positive": 2
+    },
+    {
+      "name": "lk72_rb72_k5_momentum_raw",
+      "params": {
+        "lookback": 72,
+        "rebalance": 72,
+        "topk": 5,
+        "mode": "momentum",
+        "norm": "raw"
+      },
+      "dev": {
+        "n": 910,
+        "mean": 0.2699064042329985,
+        "std": 20.923804119135625,
+        "t_stat": 0.38912867918700544,
+        "win_rate": 0.510989010989011,
+        "total": 245.6148278520286,
+        "profit_factor": 1.037526583880518
+      },
+      "folds_positive": 3
+    },
+    {
+      "name": "lk24_rb72_k5_momentum_voladj",
+      "params": {
+        "lookback": 24,
+        "rebalance": 72,
+        "topk": 5,
+        "mode": "momentum",
+        "norm": "voladj"
+      },
+      "dev": {
+        "n": 910,
+        "mean": 0.22806495904511478,
+        "std": 19.898928341698607,
+        "t_stat": 0.34573995526983387,
+        "win_rate": 0.5285714285714286,
+        "total": 207.53911273105444,
+        "profit_factor": 1.0326596726630801
+      },
+      "folds_positive": 4
+    },
+    {
+      "name": "lk24_rb24_k3_momentum_raw",
+      "params": {
+        "lookback": 24,
+        "rebalance": 24,
+        "topk": 3,
+        "mode": "momentum",
+        "norm": "raw"
+      },
+      "dev": {
+        "n": 1638,
+        "mean": 0.09840388626363898,
+        "std": 11.892889266003547,
+        "t_stat": 0.3348743039035268,
+        "win_rate": 0.4835164835164835,
+        "total": 161.18556569984065,
+        "profit_factor": 1.0239521892424428
+      },
+      "folds_positive": 2
+    },
+    {
+      "name": "lk72_rb24_k5_momentum_voladj",
+      "params": {
+        "lookback": 72,
+        "rebalance": 24,
+        "topk": 5,
+        "mode": "momentum",
+        "norm": "voladj"
+      },
+      "dev": {
+        "n": 2710,
+        "mean": 0.07266159932271177,
+        "std": 11.479871714239685,
+        "t_stat": 0.32949783337376054,
+        "win_rate": 0.4929889298892989,
+        "total": 196.9129341645489,
+        "profit_factor": 1.0188915110407724
+      },
+      "folds_positive": 3
+    },
+    {
+      "name": "lk72_rb24_k5_momentum_raw",
+      "params": {
+        "lookback": 72,
+        "rebalance": 24,
+        "topk": 5,
+        "mode": "momentum",
+        "norm": "raw"
+      },
+      "dev": {
+        "n": 2710,
+        "mean": 0.04631375052909157,
+        "std": 11.485929205322922,
+        "t_stat": 0.20990774459626171,
+        "win_rate": 0.4940959409594096,
+        "total": 125.51026393383816,
+        "profit_factor": 1.0117917822880296
+      },
+      "folds_positive": 3
+    }
+  ],
+  "generated_at": "2026-11-21T23:23:43.999981+00:00"
+}

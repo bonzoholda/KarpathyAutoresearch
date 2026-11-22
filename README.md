@@ -398,6 +398,8 @@ See . No production code was changed.
 | `main.py` | the cycle: fetch, search, publish, retire |
 | `tests/test_pipeline.py` | indicator parity, exit arithmetic, causality, the median fix |
 | `research/entry_vs_exit.py` | separates the entry's edge from the exit's damage |
+| `research/FUNDING_DISCOVERY.md` | full signal-discovery program and the funding-percentile candidate |
+| `alpha_funding/` | standalone cron-ready funding observation lane, publishes through the existing webhook only |
 
 `program.md`, `strategy_candidate.py` and `evaluator.py` are inherited from
 the upstream Karpathy fork and are **not** part of the cron cycle. They

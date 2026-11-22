@@ -1,0 +1,205 @@
+{
+  "question": "combine legacy RSI lane with a holdout-passing trend lane",
+  "symbols": 11,
+  "bars": 20736,
+  "holdout_start": 15552,
+  "holdout_bars": 5184,
+  "pre_registered_comparisons": 12,
+  "dev_winner": {
+    "family": "mom20_4",
+    "exit": "atr_trail",
+    "direction": "LONG",
+    "n": 2516,
+    "mean": 0.16607954522214308,
+    "std": 7.327877432423323,
+    "t_stat": 1.1368240918755117,
+    "win_rate": 0.3712241653418124,
+    "total": 417.85613577891195,
+    "profit_factor": 1.0645053896130985
+  },
+  "all_dev_scores": [
+    {
+      "family": "mom20_4",
+      "exit": "atr_trail",
+      "direction": "LONG",
+      "n": 2516,
+      "mean": 0.16607954522214308,
+      "std": 7.327877432423323,
+      "t_stat": 1.1368240918755117,
+      "win_rate": 0.3712241653418124,
+      "total": 417.85613577891195,
+      "profit_factor": 1.0645053896130985
+    },
+    {
+      "family": "mom20_4",
+      "exit": "ladder",
+      "direction": "LONG",
+      "n": 2516,
+      "mean": 0.012330852965939915,
+      "std": 3.1840653387216107,
+      "t_stat": 0.19425243276657328,
+      "win_rate": 0.6168521462639109,
+      "total": 31.024426062304826,
+      "profit_factor": 1.0096463367320097
+    },
+    {
+      "family": "donchian20_v15",
+      "exit": "atr_trail",
+      "direction": "LONG",
+      "n": 2439,
+      "mean": -0.17653268852876167,
+      "std": 3.784900088456915,
+      "t_stat": -2.3034384703148616,
+      "win_rate": 0.3193931939319393,
+      "total": -430.5632273216497,
+      "profit_factor": 0.8664164284435255
+    },
+    {
+      "family": "ema9_21",
+      "exit": "atr_trail",
+      "direction": "SHORT",
+      "n": 665,
+      "mean": -0.3788029684465039,
+      "std": 2.7818639813947295,
+      "t_stat": -3.5114646833842365,
+      "win_rate": 0.3112781954887218,
+      "total": -251.9039740169251,
+      "profit_factor": 0.6805597897648618
+    },
+    {
+      "family": "donchian20_v15",
+      "exit": "ladder",
+      "direction": "LONG",
+      "n": 2439,
+      "mean": -0.26010141650135715,
+      "std": 2.922838811745859,
+      "t_stat": -4.394846914306391,
+      "win_rate": 0.5547355473554736,
+      "total": -634.3873548468101,
+      "profit_factor": 0.7924512073248188
+    },
+    {
+      "family": "ema9_21",
+      "exit": "ladder",
+      "direction": "LONG",
+      "n": 826,
+      "mean": -0.4388506803668813,
+      "std": 2.41704561256958,
+      "t_stat": -5.2182148155710175,
+      "win_rate": 0.5702179176755447,
+      "total": -362.49066198304394,
+      "profit_factor": 0.6335162645892946
+    },
+    {
+      "family": "ema9_21",
+      "exit": "ladder",
+      "direction": "SHORT",
+      "n": 665,
+      "mean": -0.5085106490627183,
+      "std": 2.344246215867374,
+      "t_stat": -5.593809230217971,
+      "win_rate": 0.5473684210526316,
+      "total": -338.1595816267077,
+      "profit_factor": 0.5749971431252963
+    },
+    {
+      "family": "mom20_4",
+      "exit": "ladder",
+      "direction": "SHORT",
+      "n": 1196,
+      "mean": -0.4984847651309532,
+      "std": 2.976349192998318,
+      "t_stat": -5.79206727017196,
+      "win_rate": 0.5459866220735786,
+      "total": -596.18777909662,
+      "profit_factor": 0.6705601440625258
+    },
+    {
+      "family": "ema9_21",
+      "exit": "atr_trail",
+      "direction": "LONG",
+      "n": 826,
+      "mean": -0.5172123064083357,
+      "std": 2.440864912682756,
+      "t_stat": -6.089969660052376,
+      "win_rate": 0.31234866828087166,
+      "total": -427.21736509328525,
+      "profit_factor": 0.5670674874028572
+    },
+    {
+      "family": "donchian20_v15",
+      "exit": "ladder",
+      "direction": "SHORT",
+      "n": 2361,
+      "mean": -0.3698189952694655,
+      "std": 2.7921338114372194,
+      "t_stat": -6.4357768929235215,
+      "win_rate": 0.5421431596781024,
+      "total": -873.142647831208,
+      "profit_factor": 0.7122161300618375
+    },
+    {
+      "family": "donchian20_v15",
+      "exit": "atr_trail",
+      "direction": "SHORT",
+      "n": 2361,
+      "mean": -0.5729479033289294,
+      "std": 2.890714966670652,
+      "t_stat": -9.630700052734971,
+      "win_rate": 0.2947903430749682,
+      "total": -1352.7299997596024,
+      "profit_factor": 0.5688153609951374
+    },
+    {
+      "family": "mom20_4",
+      "exit": "atr_trail",
+      "direction": "SHORT",
+      "n": 1196,
+      "mean": -1.6367638563507019,
+      "std": 5.674670770804817,
+      "t_stat": -9.974955021071885,
+      "win_rate": 0.2617056856187291,
+      "total": -1957.5695721954394,
+      "profit_factor": 0.4700479128060367
+    }
+  ],
+  "holdout": {
+    "legacy_lane": {
+      "n": 1329,
+      "mean": -0.7243602984600981,
+      "std": 2.330920330181802,
+      "t_stat": -11.328951033966334,
+      "win_rate": 0.5334838224228743,
+      "total": -962.6748366534704,
+      "profit_factor": 0.4670287787813649
+    },
+    "selected_trend_lane": {
+      "n": 685,
+      "mean": -1.0865126439051556,
+      "std": 4.890076970783735,
+      "t_stat": -5.815196243733175,
+      "win_rate": 0.291970802919708,
+      "total": -744.2611610750316,
+      "profit_factor": 0.5707401575112958
+    },
+    "combined_regime_gated": {
+      "n": 671,
+      "mean": -0.7044295229708889,
+      "std": 2.336091644346897,
+      "t_stat": -7.811041283856065,
+      "win_rate": 0.5171385991058122,
+      "total": -472.6722099134664,
+      "profit_factor": 0.4766873299544506
+    }
+  },
+  "critical_t": {
+    "naive": 1.959963986120195,
+    "bonferroni_12": 2.8356296407970465
+  },
+  "trend_passes_naive": false,
+  "trend_passes_bonferroni": false,
+  "combined_beats_legacy": false,
+  "generated_at": "2026-11-21T23:09:14.615328+00:00",
+  "combined_less_bad_than_legacy": true,
+  "note": "Combined system is less negative than legacy alone but still has strongly negative expectancy; it does NOT beat the legacy lane in any economically meaningful sense."
+}
