@@ -1,0 +1,38 @@
+name: Funding signal cron
+
+# Publishes the OKX funding-percentile observation rows through the SAME
+# POST /webhook/strategy door as the main scanner. No extra endpoint, no
+# Railway cron configuration needed for this lane.
+#
+# The default URL in alpha_funding/config.py is the production executor.
+# Override it with a repository secret EXECUTOR_WEBHOOK_URL only if needed.
+on:
+  schedule:
+    # OKX settles funding every 8 hours (00:00, 08:00, 16:00 UTC).
+    - cron: "10 0,8,16 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout scanner
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Publish funding signals
+        env:
+          EXECUTOR_WEBHOOK_URL: ${{ secrets.EXECUTOR_WEBHOOK_URL }}
+        run: python -m alpha_funding.run

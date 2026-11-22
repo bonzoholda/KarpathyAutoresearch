@@ -64,6 +64,14 @@ has no live effect. Use `FUNDING_SYMBOLS` to restrict the set if needed.
 
 ## Cron usage
 
+A GitHub Actions workflow is included at `.github/workflows/funding-cron.yml`.
+It runs ten minutes after each OKX funding settlement (00:10, 08:10, 16:10
+UTC) and can also be triggered manually from the Actions tab. It publishes
+through the same production webhook; no Railway cron entry is needed for this
+lane.
+
+For a self-hosted setup instead:
+
 ```bash
 # Every 8 hours, after OKX funding settlement
 0 */8 * * * cd /path/to/KarpathyAutoresearch && \
